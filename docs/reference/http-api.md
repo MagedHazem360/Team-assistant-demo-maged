@@ -156,7 +156,31 @@ curl -s -X POST localhost:8000/v1/conversations/<id>/ask \
   -H "content-type: application/json" -d '{"question":"How does trace_id propagation work?"}'
 ```
 
-Streaming (`…/{id}/ask/stream`, SSE) arrives with roadmap api 2.3.
+#### `POST /v1/conversations/{id}/ask/stream` — the same, streamed (roadmap api 2.3)
+
+Same request, validation and storage rules as `/ask`; the answer arrives as Server-Sent Events
+(`text/event-stream`, `Cache-Control: no-cache`, `X-Accel-Buffering: no`, `x-trace-id` echoed):
+
+```
+event: sources  data: {"sources": [{"title": "The trace_id contract", "path": "architecture/tracing.md"}], "count": 5}
+event: token    data: {"text": "It is minted "}
+event: token    data: {"text": "at the edge [1]."}
+event: done     data: {"sources": [...], "input_tokens": 812, "output_tokens": 64}
+```
+
+**Errors depend on when they happen.** Before the first frame (unknown id, validation, or a
+model/search failure during retrieval) the response is the normal JSON error contract —
+`404` / `422` / `413` / `503 ai_unavailable`. After the first frame the status is already `200`,
+so a failure arrives as a final frame and the stream ends:
+
+```
+event: error    data: {"error": "ai_unavailable", "error_kind": "timeout"}
+```
+
+`error_kind` is a bounded classification (`timeout`, `auth`, `network`, `rate_limited`, `error`),
+never an upstream message; the trace id is in the `x-trace-id` response header. The question is
+stored either way; the answer is stored only when the stream reaches `done` (`done` means
+stored) — a client that disconnects earlier leaves no assistant message.
 
 ---
 

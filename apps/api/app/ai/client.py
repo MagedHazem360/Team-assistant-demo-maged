@@ -69,13 +69,18 @@ def build_chat_model(
         "timeout": s.request_timeout_seconds,
         "max_retries": s.max_retries,
         "temperature": temperature,
-        "streaming": streaming,
         # Ask Azure OpenAI to report token usage on the final streamed chunk too, so
         # telemetry sees input/output tokens for streamed answers (field verified in 1.6.6).
         "stream_usage": True,
         **_auth_kwargs(s),
         **overrides,
     }
+    if streaming:
+        # Only ever set it to True. An explicit ``streaming=False`` hard-disables streaming in
+        # langchain-core — even under LangGraph's token handler — so /ask/stream would get the
+        # whole answer at once and no tokens. Left unset, ``ainvoke`` stays non-streaming on
+        # its own and streams only when a streaming handler is attached (stream_mode="messages").
+        kwargs["streaming"] = True
     model = AzureChatOpenAI(**kwargs)
     get_logger("app.ai.client").info(
         "chat model client built (lazy — no request made)",

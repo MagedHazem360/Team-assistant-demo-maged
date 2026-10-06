@@ -127,7 +127,7 @@ The dev database, Foundry and AI Search are pre-created (B6), so nothing here wa
 
 ### 2.3 — Ask with streaming (SSE)
 
-- **status:** todo
+- **status:** done
 - **depends_on:** [2.2]
 - **layers:** [ai, endpoint]
 - **acceptance:**
@@ -137,9 +137,19 @@ The dev database, Foundry and AI Search are pre-created (B6), so nothing here wa
   - the response carries `x-trace-id` and is not buffered by proxies (template `sse_response`)
   - `docs/reference/http-api.md` documents the frames and the before/after-first-frame error rule
 - **how_to_test:**
+  - `uv run --directory apps/api pytest tests/test_ask_stream.py tests/ai/test_ai_graph_streaming.py -q` → green (frames in order with `[{title, path}]`, answer stored before `done`, JSON 404/422/413, failure before the first frame → JSON 503, failure after it → `error` frame with no stored answer and no leaked detail, deadline, disconnect stores nothing, a failing store ends with `error` not `done`)
+  - `just test` → web 136, api 295 passed
+  - live — terminal 1, from `apps/api`: `uv run uvicorn app.main:app --port 8000`
+  - terminal 2: `curl.exe -N -X POST localhost:8000/v1/conversations/<id>/ask/stream -H "content-type: application/json" --data-binary "@q.json"` with `q.json` = `{"question":"How does trace_id propagation work?"}` → `event: sources` first, then `event: token` lines arriving progressively, then `event: done`; `GET /v1/conversations/<id>` then shows the streamed answer stored
 - **needs_human:**
+  - the live check above
+  - the agent `/code-review` + `/security-review` (owed for 2.2 as well — usage limit)
 - **notes:**
   - 2026-10-06 — planned by `/plan-roadmap api`; the frame shape change (`string[]` → `[{title, path}]`) is the cross-service change of ADR-0015 — web follows in its own items
+  - 2026-10-06 — started and implemented by Claude (branch `feat/api-2.3-ask-stream`); awaiting test by Maged Hazem. Files: `app/ai/streaming.py` (frames per ADR-0015, `error` frame `{error, error_kind}`, `timeout`, `on_complete`), `app/routers/conversations.py` (stream route; first frame pulled before responding so pre-stream failures are JSON 503; answer stored on a fresh session), `app/repositories/conversations.py` (`record_answer_for`), tests (`tests/test_ask_stream.py` new, `tests/ai/test_ai_graph_streaming.py`), generated `openapi.json` + web `api-types.ts`, `docs/reference/http-api.md`, `apps/api/CLAUDE.md`, api 0.8.0. Reviews: agent reviews unavailable (usage limit); manual review below
+  - 2026-10-06 — manual review: the request session is not used after the response starts (answer written on its own session); `CancelledError` on disconnect is not caught, so `on_complete` never runs; the deadline covers retrieval + model; the first-frame pull keeps the before/after error rule exact; error frames carry the bounded kind only
+  - 2026-10-06 — live test feedback: real model streamed **no tokens** (sources then done, `output_tokens: 249`) — the fake model in tests streams, Azure did not: `client.py` passed `streaming=False`, which hard-disables streaming in langchain-core 1.6.5 even under LangGraph's handler. Fixed (streaming only ever set to True) + a non-streaming fallback in `stream_answer`; regression tests in `test_ai_config_client.py` / `test_ai_graph_streaming.py`. The conversation from that run has an assistant message with empty content (dev data; delete is out of scope)
+  - 2026-10-06 — confirmed by Maged Hazem (live, after the streaming fix: tokens stream, the full answer and citations are stored). Open: `[n]` markers number chunks while citations are per document — see the proposed api 2.4
 
 ## Phase 3 — Re-index from the app (F3, product phase 2 — deferred)
 

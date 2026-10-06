@@ -128,6 +128,21 @@ async def record_answer(
     return message
 
 
+async def record_answer_for(
+    session: AsyncSession,
+    conversation_id: UUID,
+    answer: str,
+    citations: list[dict[str, str]],
+    token_count: int | None,
+) -> Message | None:
+    """``record_answer`` on a fresh session (the streaming route stores the answer after the
+    request's own session may already be closed). ``None`` if the conversation is gone."""
+    conversation = await session.get(Conversation, conversation_id)
+    if conversation is None:
+        return None
+    return await record_answer(session, conversation, answer, citations, token_count)
+
+
 async def get_conversation(
     session: AsyncSession, conversation_id: UUID
 ) -> tuple[Conversation, list[Message]] | None:

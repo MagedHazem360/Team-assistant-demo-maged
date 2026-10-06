@@ -7,6 +7,34 @@ The two services version independently.
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-10-06
+
+### Added
+
+- **`POST /v1/conversations/{id}/ask/stream`** (roadmap api 2.3): the `/ask` answer as SSE —
+  `sources` → `token`* → `done`. Errors before the first frame are the JSON contract (`404`,
+  `413`, `422`, `503 ai_unavailable`); after it, a final `error` frame. The answer is stored just
+  before `done` on its own short-lived session; a client that disconnects earlier stores no
+  assistant message. The whole run is bounded by `AI_REQUEST_TIMEOUT_SECONDS`.
+- `stream_answer(..., timeout=, on_complete=)` and `StreamResult` in `app/ai/streaming.py`.
+
+### Fixed
+
+- **Streaming with the real Azure model sent no `token` frames** (and would have stored an empty
+  answer): `build_chat_model()` passed `streaming=False` explicitly, which in langchain-core
+  hard-disables streaming even under LangGraph's token handler. `streaming` is now only ever set
+  to `True`; unset, `/ask` stays non-streaming and `/ask/stream` streams. `stream_answer` also
+  falls back to the answer node's complete message when a model does not stream — one `token`
+  frame, never an empty stored answer.
+
+### Changed
+
+- **SSE frame shapes (ADR-0015) — breaking for stream consumers:** `sources` in the `sources` and
+  `done` frames is now `[{title, path}]` (was `string[]`), and the `error` frame is
+  `{"error": "ai_unavailable", "error_kind": …}` (was `{"error_kind": …}`). The web client
+  follows in roadmap web 1.2; the template's `/api/v1/assistant/*` BFF routes it replaces never
+  had an api counterpart.
+
 ## [0.7.0] — 2026-10-06
 
 ### Added

@@ -113,11 +113,12 @@ def test_stream_answer_yields_sources_tokens_done() -> None:
     events = _collect(asyncio.run(run()))
     kinds = [e for e, _ in events]
     assert kinds[0] == "sources"
-    assert events[0][1] == {"sources": ["docs/api.md"], "count": 1}
+    # ADR-0015: [{title, path}]; a chunk without a title falls back to its file name
+    assert events[0][1] == {"sources": [{"title": "api.md", "path": "docs/api.md"}], "count": 1}
     assert kinds[-1] == "done"
     tokens = "".join(d["text"] for e, d in events if e == "token")
     assert tokens == "alpha beta"
-    assert events[-1][1]["sources"] == ["docs/api.md"]
+    assert events[-1][1]["sources"] == [{"title": "api.md", "path": "docs/api.md"}]
     # Usage is provider-reported; a streaming fake aggregates chunks without it, so the
     # contract is "the keys are present, values may be None".
     assert set(events[-1][1]) == {"sources", "input_tokens", "output_tokens"}
@@ -134,7 +135,7 @@ def test_stream_answer_emits_bounded_error_frame() -> None:
         return [f async for f in stream_answer(graph, "q")]
 
     events = _collect(asyncio.run(run()))
-    assert events[-1] == ("error", {"error_kind": "timeout"})
+    assert events[-1] == ("error", {"error": "ai_unavailable", "error_kind": "timeout"})
     assert "secret" not in json.dumps(events)
 
 
@@ -145,3 +146,99 @@ def test_sse_response_headers() -> None:
     response = sse_response(frames())
     assert response.media_type == "text/event-stream"
     assert response.headers["cache-control"] == "no-cache"
+
+
+# ── 2.3: completion callback, deadline, disconnect ───────────────────────────
+
+
+def _graph(answer: str = "alpha beta", chunks: list | None = None):
+    return build_graph(
+        chat_model=fake_chat_model(answer),
+        retriever=FakeRetriever(CHUNKS[:1] if chunks is None else chunks),
+        deployment_label="test",
+    )
+
+
+def test_on_complete_gets_the_full_answer_before_done() -> None:
+    seen: list = []
+
+    async def store(result) -> None:
+        seen.append(result)
+
+    async def run() -> list[str]:
+        return [f async for f in stream_answer(_graph(), "q", on_complete=store)]
+
+    events = _collect(asyncio.run(run()))
+    assert events[-1][0] == "done"
+    (result,) = seen
+    assert result.text == "alpha beta"
+    assert result.citations == [{"title": "api.md", "path": "docs/api.md"}]
+
+
+def test_a_failing_on_complete_ends_with_an_error_not_done() -> None:
+    async def store(result) -> None:
+        raise ConnectionError("db down — must not leak")
+
+    async def run() -> list[str]:
+        return [f async for f in stream_answer(_graph(), "q", on_complete=store)]
+
+    events = _collect(asyncio.run(run()))
+    assert events[-1] == ("error", {"error": "ai_unavailable", "error_kind": "network"})
+    assert "done" not in [e for e, _ in events] and "leak" not in json.dumps(events)
+
+
+def test_the_deadline_bounds_the_whole_run() -> None:
+    class Slow:
+        async def retrieve(self, query: str, top_k: int = 5):
+            await asyncio.sleep(5)
+            return []
+
+    graph = build_graph(chat_model=fake_chat_model("x"), retriever=Slow(), deployment_label="t")
+
+    async def run() -> list[str]:
+        return [f async for f in stream_answer(graph, "q", timeout=0.1)]
+
+    assert _collect(asyncio.run(run())) == [
+        ("error", {"error": "ai_unavailable", "error_kind": "timeout"})
+    ]
+
+
+def test_a_disconnect_before_done_never_runs_on_complete() -> None:
+    seen: list = []
+
+    async def store(result) -> None:
+        seen.append(result)
+
+    async def run() -> list[str]:
+        frames = stream_answer(_graph("one two three four"), "q", on_complete=store)
+        got = [await anext(frames), await anext(frames)]  # sources + the first token
+        await frames.aclose()  # what Starlette does when the client goes away
+        return got
+
+    got = _collect(asyncio.run(run()))
+    assert [e for e, _ in got] == ["sources", "token"]
+    assert seen == []
+
+
+def test_a_model_that_does_not_stream_still_delivers_and_stores_its_answer() -> None:
+    """Regression (api 2.3): a model returning its answer in one piece must still produce a
+    token frame and a non-empty stored answer."""
+    from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+    from langchain_core.messages import AIMessage
+
+    model = GenericFakeChatModel(
+        messages=iter([AIMessage(content="whole answer at once")]), disable_streaming=True
+    )
+    graph = build_graph(chat_model=model, retriever=FakeRetriever(CHUNKS[:1]), deployment_label="t")
+    seen: list = []
+
+    async def store(result) -> None:
+        seen.append(result)
+
+    async def run() -> list[str]:
+        return [f async for f in stream_answer(graph, "q", on_complete=store)]
+
+    events = _collect(asyncio.run(run()))
+    assert [e for e, _ in events] == ["sources", "token", "done"]
+    assert events[1][1] == {"text": "whole answer at once"}
+    assert seen[0].text == "whole answer at once"

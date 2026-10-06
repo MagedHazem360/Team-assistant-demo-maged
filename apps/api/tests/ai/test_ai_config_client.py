@@ -139,3 +139,20 @@ class TestClientFactory:
         assert client_mod.get_chat_model() is first
         client_mod._reset_for_tests()
         assert client_mod.get_chat_model() is not first
+
+
+def test_chat_model_streaming_is_never_hard_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Regression (api 2.3): an explicit ``streaming=False`` hard-disables streaming in
+    langchain-core, so LangGraph's token handler got the whole answer at once and /ask/stream
+    sent no tokens. Unset, the model streams only when a streaming handler asks for it."""
+    monkeypatch.setenv("AZURE_AI_ENDPOINT", ENDPOINT)
+    monkeypatch.setenv("AZURE_AI_DEPLOYMENT", "gpt-4o-mini")
+    monkeypatch.setenv("AZURE_AI_AUTH_MODE", "api_key")
+    monkeypatch.setenv("AZURE_AI_API_KEY", "dev-key")
+
+    default = client_mod.build_chat_model()
+    assert "streaming" not in default.model_fields_set
+    assert default._streaming_disabled() is False  # noqa: SLF001 — the exact rule that bit us
+
+    explicit = client_mod.build_chat_model(streaming=True)
+    assert explicit.streaming is True
