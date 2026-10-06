@@ -40,14 +40,40 @@ class GraphState(TypedDict, total=False):
     context: list[RetrievedChunk]
 
 
+def _citation_title(chunk: RetrievedChunk) -> str:
+    """The document title; a chunk ingested before titles existed falls back to its file name."""
+    return chunk.get("title") or PurePosixPath(chunk.get("source") or "").name
+
+
 def format_context(chunks: list[RetrievedChunk]) -> str:
-    """Numbered context block for the system prompt (the model cites ``[n]``)."""
+    """The context block for the system prompt, numbered **by document** (roadmap api 2.4).
+
+    Every chunk of one ``source`` sits under the same ``[n]``, numbered in the order documents
+    first appear in retrieval — the order of ``unique_citations()``, so the model's ``[n]`` is
+    exactly ``citations[n-1]``. Chunks without a source are shown unnumbered (they cannot be
+    cited).
+    """
     if not chunks:
         return "(no context available)"
-    return "\n\n".join(
-        f"[{i}] ({c.get('source') or 'unknown'})\n{c.get('content', '')}"
-        for i, c in enumerate(chunks, start=1)
-    )
+    documents: dict[str, list[str]] = {}
+    titles: dict[str, str] = {}
+    unsourced: list[str] = []
+    for c in chunks:
+        path = c.get("source") or ""
+        content = c.get("content", "")
+        if not path:
+            unsourced.append(content)
+            continue
+        if path not in documents:
+            documents[path] = []
+            titles[path] = _citation_title(c)
+        documents[path].append(content)
+    blocks = [
+        f"[{n}] {titles[path]} ({path})\n" + "\n…\n".join(parts)
+        for n, (path, parts) in enumerate(documents.items(), start=1)
+    ]
+    blocks += [f"[-] (unknown source — do not cite)\n{content}" for content in unsourced]
+    return "\n\n".join(blocks)
 
 
 def last_user_text(messages: list[AnyMessage]) -> str:
@@ -153,7 +179,7 @@ def unique_citations(chunks: list[RetrievedChunk]) -> list[Citation]:
         if not path or path in seen:
             continue
         seen.add(path)
-        citations.append({"title": c.get("title") or PurePosixPath(path).name, "path": path})
+        citations.append({"title": _citation_title(c), "path": path})
     return citations
 
 

@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 from pathlib import Path
 
 import pytest
@@ -43,6 +44,9 @@ def test_eval_case(case: dict) -> None:
     assert answer.sources == case["expect_sources"]
     if "expect_citations" in case:  # ADR-0015: one {title, path} per cited document
         assert answer.citations == case["expect_citations"]
+    if "expect_max_marker" in case:  # api 2.4: [n] never exceeds the number of citations
+        markers = [int(m) for m in re.findall(r"\[(\d+)\]", answer.text)]
+        assert markers and max(markers) <= case["expect_max_marker"] == len(answer.citations)
 
 
 def test_system_prompt_keeps_its_guardrails() -> None:

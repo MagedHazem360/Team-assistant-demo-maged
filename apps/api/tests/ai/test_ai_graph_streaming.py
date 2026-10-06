@@ -28,11 +28,50 @@ def _reset():
     retrieve_mod._reset_for_tests()
 
 
-def test_format_context_numbers_chunks_and_handles_empty() -> None:
+def test_format_context_numbers_documents_and_handles_empty() -> None:
     assert format_context([]) == "(no context available)"
     text = format_context(CHUNKS[:2])
-    assert text.startswith("[1] (docs/api.md)")
-    assert "[2] (docs/web.md)" in text
+    assert text.startswith("[1] api.md (docs/api.md)")  # no title ingested → the file name
+    assert "[2] web.md (docs/web.md)" in text
+
+
+def test_format_context_markers_match_the_citations_list() -> None:
+    """Roadmap api 2.4: chunks of one document share a number, so [n] is citations[n-1]."""
+    from app.ai.graph import unique_citations
+
+    chunks = [
+        {
+            "id": "a1",
+            "content": "minted at the edge",
+            "source": "tracing.md",
+            "title": "Trace",
+            "score": 1.0,
+        },
+        {
+            "id": "b1",
+            "content": "run just dev",
+            "source": "start.md",
+            "title": "Start",
+            "score": 0.9,
+        },
+        {
+            "id": "a2",
+            "content": "echoed on responses",
+            "source": "tracing.md",
+            "title": "Trace",
+            "score": 0.8,
+        },
+        {"id": "x", "content": "orphan text", "source": "", "title": "", "score": 0.1},
+    ]
+    text = format_context(chunks)
+    assert text.count("[1] Trace (tracing.md)") == 1 and text.count("[2] Start (start.md)") == 1
+    assert "[3]" not in text  # three chunks, two documents
+    first = text.split("[2]")[0]
+    assert "minted at the edge" in first and "echoed on responses" in first  # grouped under [1]
+    assert "[-] (unknown source — do not cite)\norphan text" in text
+    citations = unique_citations(chunks)
+    for n, citation in enumerate(citations, start=1):
+        assert f"[{n}] {citation['title']} ({citation['path']})" in text
 
 
 def test_last_user_text_picks_the_latest_human_turn() -> None:

@@ -141,6 +141,9 @@ citations, and returns:
 }
 ```
 
+Inline markers in `answer` refer to the citations list: `[n]` is `citations[n-1]` — the model's
+context is numbered by document, one number per document (roadmap api 2.4).
+
 The first question replaces the default title "New conversation" (one line, ≤ 200). The whole
 answer is bounded at `AI_REQUEST_TIMEOUT_SECONDS` (60 s).
 

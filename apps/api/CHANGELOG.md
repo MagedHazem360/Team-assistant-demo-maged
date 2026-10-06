@@ -7,6 +7,18 @@ The two services version independently.
 
 ## [Unreleased]
 
+## [0.8.1] — 2026-10-06
+
+### Fixed
+
+- **Citation markers match the citations list** (roadmap api 2.4): the model's context is now
+  numbered **by document** — every chunk of one source sits under the same `[n]`, in the order of
+  `citations` — so an answer's `[n]` is exactly `citations[n-1]`. Before, chunks were numbered
+  individually and an answer could cite `[5]` with two citations listed. Each context entry shows
+  the document title and path; source-less chunks are shown as `[-]` and never cited. The system
+  prompt says so; eval case `markers-number-documents-not-chunks` pins it. Response shapes are
+  unchanged.
+
 ## [0.8.0] — 2026-10-06
 
 ### Added

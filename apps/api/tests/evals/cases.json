@@ -62,5 +62,52 @@
         "path": "architecture/tracing.md"
       }
     ]
+  },
+  {
+    "id": "markers-number-documents-not-chunks",
+    "question": "How is the trace id handled, and how do I start the app?",
+    "context": [
+      {
+        "id": "a1",
+        "content": "The trace id is minted at the edge.",
+        "source": "architecture/tracing.md",
+        "title": "The trace_id contract",
+        "score": 1.0
+      },
+      {
+        "id": "b1",
+        "content": "Run just dev to start both services.",
+        "source": "getting-started.md",
+        "title": "Getting started",
+        "score": 0.9
+      },
+      {
+        "id": "a2",
+        "content": "Every response echoes x-trace-id.",
+        "source": "architecture/tracing.md",
+        "title": "The trace_id contract",
+        "score": 0.8
+      }
+    ],
+    "scripted_answer": "It is minted at the edge and echoed on every response [1]; start with just dev [2].",
+    "expect_contains": [
+      "[1]",
+      "[2]"
+    ],
+    "expect_sources": [
+      "architecture/tracing.md",
+      "getting-started.md"
+    ],
+    "expect_citations": [
+      {
+        "title": "The trace_id contract",
+        "path": "architecture/tracing.md"
+      },
+      {
+        "title": "Getting started",
+        "path": "getting-started.md"
+      }
+    ],
+    "expect_max_marker": 2
   }
 ]

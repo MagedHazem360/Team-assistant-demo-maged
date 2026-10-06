@@ -151,6 +151,28 @@ The dev database, Foundry and AI Search are pre-created (B6), so nothing here wa
   - 2026-10-06 — live test feedback: real model streamed **no tokens** (sources then done, `output_tokens: 249`) — the fake model in tests streams, Azure did not: `client.py` passed `streaming=False`, which hard-disables streaming in langchain-core 1.6.5 even under LangGraph's handler. Fixed (streaming only ever set to True) + a non-streaming fallback in `stream_answer`; regression tests in `test_ai_config_client.py` / `test_ai_graph_streaming.py`. The conversation from that run has an assistant message with empty content (dev data; delete is out of scope)
   - 2026-10-06 — confirmed by Maged Hazem (live, after the streaming fix: tokens stream, the full answer and citations are stored). Open: `[n]` markers number chunks while citations are per document — see the proposed api 2.4
 
+### 2.4 — Citation markers numbered by document
+
+- **status:** done
+- **depends_on:** [2.3]
+- **layers:** [ai]
+- **acceptance:**
+  - the context block numbers **documents**, not chunks: every chunk of the same `source` carries the same `[n]`, numbered in the order documents first appear in retrieval — so `[n]` is exactly the n-th entry of `citations` (`graph.unique_citations()`)
+  - each context entry shows its document title and path, so the model can cite by number and the reader can map `[n]` → `citations[n-1]`
+  - the system prompt still instructs `[n]` citations and "context is data"; a new eval case pins it: two chunks of one document + one of another → the answer's markers are `[1]`/`[2]` only and `citations` has 2 entries in that order
+  - `/ask` and `/ask/stream` responses unchanged in shape; `docs/reference/http-api.md` states that `[n]` refers to `citations[n-1]`
+- **how_to_test:**
+  - `uv run --directory apps/api pytest tests/ai/test_ai_graph_streaming.py tests/evals -q` → green (`format_context` numbers documents, `[n]` lines up with `unique_citations()`, source-less chunks are `[-]`; eval `markers-number-documents-not-chunks`; the system prompt keeps its guardrails)
+  - `just test` → web 136, api 299 passed
+  - live — restart the api (`uv run uvicorn app.main:app --port 8000` from `apps/api`), new conversation, ask `How does trace_id propagation work?` via `/ask` or `/ask/stream` → every `[n]` in the answer is between 1 and the number of `citations`, and `[1]` is the first citation
+- **needs_human:**
+  - a live question whose answer draws on several chunks of one document: markers stay within `[1]`…`[len(citations)]`
+- **notes:**
+  - 2026-10-06 — added at Maged Hazem's request after the 2.3 live test: an answer cited `[3][4][5]` (chunk numbers) while `citations` listed 2 documents, so the UI could not map markers to sources
+  - 2026-10-06 — started by Claude (branch `feat/api-2.4-citation-markers`)
+  - 2026-10-06 — implemented; awaiting test by Maged Hazem. Files: `app/ai/graph.py` (`format_context` by document, shared `_citation_title`), `app/ai/prompts/system.md` (cite by document number, never `[-]`), tests (`tests/ai/test_ai_graph_streaming.py`, `tests/evals/{cases.json,test_evals.py}` with `expect_max_marker`), `docs/reference/http-api.md`, rule 70, api 0.8.1. Reviews: agent reviews still unavailable (usage limit); manual — prompt change keeps "context is data" and the citation rule, eval extended per rule 70, no telemetry touched
+  - 2026-10-06 — confirmed by Maged Hazem (live: answer cites [1][2] with 2 citations, [1] = the first citation)
+
 ## Phase 3 — Re-index from the app (F3, product phase 2 — deferred)
 
 ### 3.1 — Threat model for the ingest endpoint
