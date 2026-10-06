@@ -41,6 +41,8 @@ def test_eval_case(case: dict) -> None:
     for needle in case["expect_contains"]:
         assert needle.lower() in answer.text.lower(), (case["id"], answer.text)
     assert answer.sources == case["expect_sources"]
+    if "expect_citations" in case:  # ADR-0015: one {title, path} per cited document
+        assert answer.citations == case["expect_citations"]
 
 
 def test_system_prompt_keeps_its_guardrails() -> None:

@@ -99,7 +99,7 @@ The dev database, Foundry and AI Search are pre-created (B6), so nothing here wa
 
 ### 2.2 — Ask a question in a conversation (JSON)
 
-- **status:** todo
+- **status:** done
 - **depends_on:** [1.2, 2.1]
 - **layers:** [ai, endpoint]
 - **acceptance:**
@@ -111,9 +111,19 @@ The dev database, Foundry and AI Search are pre-created (B6), so nothing here wa
   - no question, answer, retrieved text or conversation id in logs, spans, metrics or events; model calls only through `client.py` inside `model_call_span()`
   - an eval case in `tests/evals/cases.json` covers a grounded answer that cites its source
 - **how_to_test:**
+  - `uv run --directory apps/api pytest tests/test_ask.py tests/evals -q` → green (answer + citations + both messages stored, history as user/assistant turns never system, null token_count, 404/422/413, search failure / timeout / model failure → 503 with the question kept and no answer, no content or id in the service's logs, repository T-SQL `TOP 10` newest-first, title rules)
+  - `just test` → web 136, api 287 passed
+  - live — terminal 1, from `apps/api`: `uv run uvicorn app.main:app --port 8000`
+  - terminal 2: create a conversation (`curl.exe -s -X POST localhost:8000/v1/conversations -H "content-type: application/json" -d "{}"`), then ask: `curl.exe -s -X POST localhost:8000/v1/conversations/<id>/ask -H "content-type: application/json" -d "{\"question\": \"How does trace_id propagation work?\"}"` → `{"message_id":…,"answer":"… [1] …","citations":[{"title":"The `trace_id` contract","path":"architecture/tracing.md"},…]}`
+  - a follow-up in the same conversation (`"And on the api side?"`) answers in context; `GET /v1/conversations/<id>` shows 4 messages, the title is now the first question
 - **needs_human:**
+  - the live check above (Foundry chat + embeddings + the ingested index + the dev database)
+  - re-run `/code-review` and `/security-review` on this branch: the agent reviews could not run (usage limit) — a manual review against the same checklist found nothing blocking
 - **notes:**
   - 2026-10-06 — planned by `/plan-roadmap api`; the live answer needs 1.1 applied and 2.1's ingestion run
+  - 2026-10-06 — started by Claude (branch `feat/api-2.2-ask`, off `development`)
+  - 2026-10-06 — implemented; awaiting test by Maged Hazem. Files: `app/routers/conversations.py` (ask route), `app/repositories/conversations.py`, `tests/test_ask.py` (new), `tests/evals/{cases.json,test_evals.py}`, generated `docs/reference/openapi.json` + `apps/web/src/lib/api-types.ts`, `docs/reference/http-api.md`, `apps/api/CLAUDE.md`, api 0.7.0 (CHANGELOG, pyproject, uv.lock, root CLAUDE.md). Reviews: agent reviews failed to start (usage limit); manual review — session not held during the model call, no lazy load after commit, history ordered, 60 s cap wins over client retries, broad except covers only the AI call, no content in logs — nothing blocking
+  - 2026-10-06 — confirmed by Maged Hazem (live: answers from the indexed docs with citations, follow-up in context, 422/404). Still owed: the agent `/code-review` + `/security-review` (usage limit)
 
 ### 2.3 — Ask with streaming (SSE)
 

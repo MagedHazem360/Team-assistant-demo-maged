@@ -126,8 +126,37 @@ curl -s -X POST localhost:8000/v1/conversations -H "content-type: application/js
 curl -s "localhost:8000/v1/conversations?limit=5"
 ```
 
-Asking questions in a conversation (`…/{id}/ask`, `…/{id}/ask/stream`) arrives with roadmap api
-2.2/2.3.
+#### `POST /v1/conversations/{id}/ask` — ask a question (roadmap api 2.2)
+
+Request `{ "question": string }` (1–4,000 characters after trimming). The api stores the question,
+retrieves the top 5 chunks from AI Search, sends the conversation's **last 10 stored messages**
+(oldest first, as user/assistant turns) plus the question to the model, stores the answer with its
+citations, and returns:
+
+```json
+{
+  "message_id": "…",
+  "answer": "It is minted at the edge [1].",
+  "citations": [{ "title": "The trace_id contract", "path": "architecture/tracing.md" }]
+}
+```
+
+The first question replaces the default title "New conversation" (one line, ≤ 200). The whole
+answer is bounded at `AI_REQUEST_TIMEOUT_SECONDS` (60 s).
+
+| Situation                                    | Status | `error`             | Stored                      |
+| -------------------------------------------- | ------ | ------------------- | --------------------------- |
+| unknown conversation                         | 404    | `not_found`         | nothing                     |
+| empty / blank question                       | 422    | `validation_error`  | nothing                     |
+| question longer than 4,000 characters        | 413    | `payload_too_large` | nothing                     |
+| model or search failure, or the 60 s timeout | 503    | `ai_unavailable`    | the question, **no** answer |
+
+```bash
+curl -s -X POST localhost:8000/v1/conversations/<id>/ask \
+  -H "content-type: application/json" -d '{"question":"How does trace_id propagation work?"}'
+```
+
+Streaming (`…/{id}/ask/stream`, SSE) arrives with roadmap api 2.3.
 
 ---
 

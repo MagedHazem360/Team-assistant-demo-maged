@@ -15,7 +15,7 @@ this as a starting map; read the actual files when you need detail.
   awaits `dispose_engine()` on shutdown.
 - `routers/v1.py` — the **mandatory `/v1` business router** (`v1_router`, `prefix="/v1"`); feature
   routers attach here (ADR-0001 / rule 05). `main.py` includes it alongside `routes.py`.
-  Feature routers: `routers/conversations.py` (`/v1/conversations` — create, list, read; Pydantic
+  Feature routers: `routers/conversations.py` (`/v1/conversations` — create, list, read, ask; Pydantic
   request/response models in the module).
 - `repositories/` — query functions that take an `AsyncSession` (`conversations.py`); SQL stays
   out of the routers. Route tests swap these for fakes; repository tests check the compiled T-SQL.
@@ -81,8 +81,9 @@ this as a starting map; read the actual files when you need detail.
   Search; `query_external_db.py` allow-listed read-only SQL via `queries.py`), `prompts/`
   (files, `load_prompt`), `telemetry.py` (`model_call_span`, content-free), `ingest.py`
   (`python -m app.ai.ingest <path> [--prune [--yes] [--force]]`; owns the index definition: `title` + corpus-relative
-  `source` per chunk, ADR-0015). Ships **no route** — a project
-  adds `/v1/...` routes that call it (`docs/architecture/ai.md`).
+  `source` per chunk, ADR-0015). Its first route is
+  `POST /v1/conversations/{id}/ask` (`routers/conversations.py`; the graph is the
+  `get_answer_graph` dependency, so tests inject a fake model/retriever).
 
 ## Conventions
 

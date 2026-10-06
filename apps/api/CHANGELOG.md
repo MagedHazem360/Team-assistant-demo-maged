@@ -7,6 +7,22 @@ The two services version independently.
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-10-06
+
+### Added
+
+- **`POST /v1/conversations/{id}/ask`** (roadmap api 2.2, `ARCHITECTURE.md` B3/B4a): answers a
+  question from the indexed docs through the `retrieve → answer` graph, with the conversation's
+  last 10 stored messages as history (user/assistant turns, never a system message). Returns
+  `{message_id, answer, citations: [{title, path}]}`. Stores the question before the model call and
+  the answer (citations validated as `[{title, path}]`, `token_count` = output tokens or `null`)
+  after; the first question replaces the default title. `404` unknown conversation, `422` empty,
+  `413 payload_too_large` over 4,000 characters, `503 ai_unavailable` on a model/search failure
+  or the `AI_REQUEST_TIMEOUT_SECONDS` bound — the question is kept, no answer is stored.
+- Repository: `get_conversation_for_ask`, `record_question`, `record_answer`,
+  `title_from_question` (one line, ≤ 200 UTF-16 units, never half a surrogate pair).
+- Eval case `grounded-answer-cites-title-and-path`; the harness checks `expect_citations`.
+
 ## [0.6.0] — 2026-10-06
 
 ### Added

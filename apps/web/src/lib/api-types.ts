@@ -102,10 +102,51 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/conversations/{conversation_id}/ask': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Ask a question in a conversation */
+    post: operations['ask_in_conversation_v1_conversations__conversation_id__ask_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    /** AskRequest */
+    AskRequest: {
+      /**
+       * Question
+       * @description 1–4000 characters after trimming; longer → 413.
+       */
+      question: string;
+    };
+    /** AskResponse */
+    AskResponse: {
+      /** Answer */
+      answer: string;
+      /**
+       * Citations
+       * @description The documents the answer drew on (ADR-0015).
+       */
+      citations: components['schemas']['Citation'][];
+      /**
+       * Message Id
+       * Format: uuid
+       * @description The stored assistant message.
+       */
+      message_id: string;
+    };
     /** Citation */
     Citation: {
       /** Path */
@@ -429,6 +470,77 @@ export interface operations {
       };
       /** @description Unhandled error (`internal_error`) */
       500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorBody'];
+        };
+      };
+    };
+  };
+  ask_in_conversation_v1_conversations__conversation_id__ask_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        conversation_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['AskRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AskResponse'];
+        };
+      };
+      /** @description Unknown conversation (`not_found`) */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorBody'];
+        };
+      };
+      /** @description Question too long (`payload_too_large`) */
+      413: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorBody'];
+        };
+      };
+      /** @description Validation failed (`validation_error`) */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorBody'];
+        };
+      };
+      /** @description Unhandled error (`internal_error`) */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorBody'];
+        };
+      };
+      /** @description Model or search failed (`ai_unavailable`) */
+      503: {
         headers: {
           [name: string]: unknown;
         };
