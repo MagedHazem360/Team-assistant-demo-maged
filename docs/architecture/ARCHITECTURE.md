@@ -1,6 +1,6 @@
 # Architecture — living document
 
-This is the **one architecture file** for a project built on the AI Accelerator. It has two
+This is the **one architecture file** for a project built on the Team Assistant. It has two
 parts with different owners:
 
 | Part                                                               | Owner                                                                  | Rule                                                                                                                                                                                                                                       |
@@ -68,7 +68,7 @@ domain, no auth, no AI feature — those are the project's job, built in the slo
 flowchart LR
     user(["Browser user"])
 
-    subgraph platform["Project platform (built on the AI Accelerator)"]
+    subgraph platform["Project platform (built on the Team Assistant)"]
         web["apps/web<br/>Next.js BFF + UI"]
         api["apps/api<br/>FastAPI — backend + AI runtime"]
     end
@@ -209,67 +209,158 @@ Honest state of what exists (see also the root `README.md` → _Scope & delivery
 
 ### B1. Project summary
 
-_One paragraph: what the application does, for whom, and the business outcome it serves. Name
-the project's environments and the Azure subscription/resource-group naming convention._
+**Team Assistant** — a simple internal chatbot that helps the team find and use its own
+documents: a user opens `/chat`, starts a conversation, asks a question; the answer streams back
+and cites the documents it came from (title + path). Follow-up questions work because the api
+sends the conversation's last 10 stored messages as history. Conversations and messages are
+stored in Azure SQL; the corpus is the repo's `docs/**/*.md`, indexed in Azure AI Search
+(`team-assistant-docs`). No login (internal only; Okta later).
+
+- **Environments:** `dev` · `staging` · `prod`. **Team:** Maged Hazem (`@MagedHazem360`) — admin, backend and frontend.
+- **Phase 1 (first release):** F1 + F2, the corpus ingested with the template's CLI.
+  **Phase 2:** F3 (in-app re-index), the platform deployment (B6).
 
 ### B2. Feature map
 
-_The features the application will have, grouped by area. One line each with the owning
-service(s) and a link to the roadmap item once planned. This is the input to `plan-roadmap`._
+| Id  | Feature              | User story                                                                                                | Layers                              | Phase |
+| --- | -------------------- | --------------------------------------------------------------------------------------------------------- | ----------------------------------- | ----- |
+| F1  | Chat with citations  | As a user I ask a question on `/chat` and the answer streams back with citations (document title + path). | ai, endpoint, bff, ui               | 1     |
+| F2  | Conversation history | As a user I start a new conversation, see past ones, reopen one and continue it (follow-ups use history). | model, migration, endpoint, bff, ui | 1     |
+| F3  | Knowledge base       | As an admin I re-index the corpus from the app (`POST /v1/admin/ingest`).                                 | ai, endpoint                        | 2     |
 
-| Area | Feature | Services touched (web / api / ai / infra) | Roadmap item |
-| ---- | ------- | ----------------------------------------- | ------------ |
-|      |         |                                           |              |
+Phase 1 indexes the corpus with the existing CLI, run by a developer from `apps/api`:
+`uv run python -m app.ai.ingest ../../docs` (re-run after the docs change).
 
 ### B3. AI components
 
-_Which model deployments (Azure AI Foundry project, deployment names, regions), which
-LangGraph graphs/agents exist and what each does, which tools they may call (retrieval,
-external-DB queries, actions), prompt ownership, evaluation approach, guardrails (content
-filters, injection defences, PII handling)._
+- The template's `retrieve → answer` graph with `AzureSearchRetriever` on index `team-assistant-docs`
+  (`gpt-4.1` chat, `text-embedding-3-large` embeddings, 3072 dimensions).
+- History = the last 10 messages of the conversation **before** the current question, loaded from
+  Azure SQL by the api (the browser sends only the question).
+- Streaming frames `sources → token* → done | error`; `sources` and `done` carry `[{title, path}]`
+  (ADR-0015) — ingestion adds a `title` index field (first `# ` heading, else the file name);
+  `path` is relative to the corpus root (`docs/`).
+- Ingestion (phase 1): the template's CLI over `docs/`. Phase 2: `POST /v1/admin/ingest` → `202`,
+  background, single-flight (`409` while one runs), corpus baked into the api image (ADR-0014,
+  threat model first).
+- Telemetry per the template: no message content in logs, spans, metrics or events; no
+  conversation ids in metric attributes.
+- Limits: question 1–4,000 characters; `top_k = 5`; timeout 60 s (BFF hop timeout ≥ 60 s, rule 30).
+  A model/search failure **before the first frame** → `503 ai_unavailable`; **after it** →
+  `event: error {"error": "ai_unavailable"}` and the stream ends (the UI shows the code and the
+  `x-trace-id` response header). The user message is kept either way; a disconnect before `done`
+  stores no assistant message.
 
-| Component | Type (graph / tool / prompt / retriever) | Model / deployment | Data it may touch | Notes |
-| --------- | ---------------------------------------- | ------------------ | ----------------- | ----- |
-|           |                                          |                    |                   |       |
+### B4. Data stores (Azure SQL, owned by `apps/api`)
 
-### B4. Data stores
+Pre-created dev database (`DATABASE_URL` in `apps/api/.env`); read/write from `apps/api` only.
 
-_The project's own database (from `docs/design/db-design.md`), every external data source (from
-`docs/design/external-systems.md`), the vector store, blob/file stores. For each: Azure
-resource, environment, access mode (read/write vs read-only), owner, retention/PII class._
+Table `conversations`:
 
-| Store | Kind | Environment(s) | Access from api | Owner | PII / retention |
-| ----- | ---- | -------------- | --------------- | ----- | --------------- |
-|       |      |                |                 |       |                 |
+| Column       | Type               | Rules                                                                                                |
+| ------------ | ------------------ | ---------------------------------------------------------------------------------------------------- |
+| `id`         | `uniqueidentifier` | PK                                                                                                   |
+| `title`      | `nvarchar(200)`    | not null; given on create, else "New conversation" until the first question replaces it (cut to 200) |
+| `created_at` | `datetime2(3)`     | not null, server default                                                                             |
+| `updated_at` | `datetime2(3)`     | not null, server default; set on every new message (the list is newest first)                        |
+
+Table `messages`:
+
+| Column            | Type               | Rules                                                                                      |
+| ----------------- | ------------------ | ------------------------------------------------------------------------------------------ |
+| `id`              | `uniqueidentifier` | PK                                                                                         |
+| `conversation_id` | `uniqueidentifier` | FK → `conversations.id` (`NO ACTION`); index `(conversation_id, created_at)`               |
+| `role`            | `nvarchar(20)`     | named `CHECK (role IN ('user','assistant'))` (rule 25)                                     |
+| `content`         | `nvarchar(max)`    | not null                                                                                   |
+| `citations`       | `nvarchar(max)`    | nullable, JSON `[{title, path}]`, named `CHECK (citations IS NULL OR ISJSON(citations)=1)` |
+| `token_count`     | `int`              | nullable                                                                                   |
+| `created_at`      | `datetime2(3)`     | not null, server default                                                                   |
+
+Retention: indefinite in this release. PII: free text typed by users. Conversations are shared
+(no owner) until auth lands — ADR-0013.
+
+### B4a. API surface (`/v1`)
+
+| Method | Path                                | Request                                  | Response                                                                                     | Errors                                                              |
+| ------ | ----------------------------------- | ---------------------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| POST   | `/v1/conversations`                 | `{ "title"?: string }` (≤ 200)           | `201` `{ id, title, created_at, updated_at }`                                                | `422 validation_error`                                              |
+| GET    | `/v1/conversations`                 | `?limit=50` (1–100)                      | `200` `{ items: [{ id, title, updated_at }], count }` newest first; `count` = items returned | `422 validation_error`                                              |
+| GET    | `/v1/conversations/{id}`            | —                                        | `200` conversation + `messages: [{ id, role, content, citations, created_at }]`              | `404 not_found`                                                     |
+| POST   | `/v1/conversations/{id}/ask`        | `{ "question": string }` (1–4,000 chars) | `200` `{ message_id, answer, citations }`                                                    | `404`, `413 payload_too_large`, `422` (empty), `503 ai_unavailable` |
+| POST   | `/v1/conversations/{id}/ask/stream` | same                                     | SSE `sources → token* → done` or `error`                                                     | same, only before the first frame                                   |
+| POST   | `/v1/admin/ingest` _(phase 2)_      | —                                        | `202 { "status": "started" }`                                                                | `409 ingest_running`                                                |
+
+Error bodies are the template's `{ "error": code, "trace_id": id }`. The BFF mirrors every route
+under `/api/v1/…` with `MOCK_UPSTREAM` fixtures for each. These routes **replace** the template's
+`/api/v1/assistant/ask[/stream]` BFF routes (which point at api routes that do not exist).
 
 ### B5. Integrations
 
-_External APIs, identity providers, messaging/queues, file ingestion sources. Direction,
-protocol, auth method, timeout policy, and the traced helper used._
+None (no external database).
 
 ### B6. Infrastructure topology
 
-_Per environment: (a) the **platform references** this use case consumes — resource group,
-Container Apps Environment, registry, Foundry endpoint + the deployment names it uses, AI Search
-service — exactly as in `infra/platform/<env>.json`; (b) the **owned resources** — container
-apps, Azure SQL server/database, storage, Key Vault, App Insights, the Search index name —
-exactly as in `main.<env>.bicepparam`; (c) networking (firewall allowlist today; private
-endpoints later); (d) the identities and the **grants requested** from the cloud team
-(`infra/grant-request.md`) with their status. Add a diagram when it stops fitting in a table._
+Phase 1 runs locally against pre-created Foundry, AI Search and Azure SQL (`apps/api/.env`); the
+platform deployment (Bicep on the cloud team's shared tier) is phase 2 (`roadmaps/infra` 1.1,
+deferred). Platform manifests (`infra/platform/<env>.json`) keep template placeholders until then
+(resource group `rg-ai-dev` confirmed for dev); owned resources follow
+`<prefix>-team-assistant-<env>` (Key Vault `kv-team-assistan-<env>`), Search index
+`team-assistant-docs`. Developer IPs: not needed (the dev resources allow all IPs).
+
+- **Migrations:** Maged Hazem applies the reviewed revision to the dev database by hand
+  (`alembic upgrade head`); agents never apply migrations.
+- **Local prerequisites:** ODBC Driver 18 (the api's Azure SQL driver).
 
 ### B7. Security and auth posture
 
-_Who the users are, how they authenticate (or the explicit "internal-only, no auth" decision),
-authorization model (thread/record ownership, roles), data classification, threat models
-written (`docs/security/threat-models/`)._
+Internal-only, no user auth; **conversations are shared** (every user can read every
+conversation) until Okta lands — ADR-0013 (Proposed); users should not paste personal or
+confidential data. Prompt injection through the corpus is mitigated by the template's "context is
+data" prompt rule; the corpus is git-controlled. Phase 2's ingest endpoint needs the threat model
+`docs/security/threat-models/team-assistant.md` and ADR-0014 first.
 
 ### B8. Decisions and open questions
 
-_Links to the project's ADRs (`docs/adr/`) and the questions still open, each with an owner
-and a date._
+| #   | Decision                                                                                         |
+| --- | ------------------------------------------------------------------------------------------------ |
+| 1   | Corpus: `docs/**/*.md`; phase 1 ingests with the CLI; phase 2 bakes it into the image (ADR-0014) |
+| 2   | Ingest endpoint (phase 2): `202`, background, single-flight, `409` when busy                     |
+| 3   | Title optional on create; else the first question (cut to 200) replaces "New conversation"       |
+| 4   | History sent to the model: the last 10 stored messages, loaded by the api                        |
+| 5   | Messages kept indefinitely; no purge job                                                         |
+| 6   | Rename and delete: out of scope                                                                  |
+| 7   | Shared conversations — ADR-0013 · citation shape `[{title, path}]` — ADR-0015                    |
+| 8   | The conversation routes replace the template's `assistant` ask routes                            |
+
+Open: none for phase 1. Phase 2: the guard on the ingest endpoint (threat model).
+
+### Request flow (F1 — ask/stream)
+
+```mermaid
+sequenceDiagram
+    participant U as Browser /chat
+    participant W as web BFF
+    participant A as api /v1/conversations/{id}/ask/stream
+    participant S as AI Search index
+    participant M as Foundry chat deployment
+    participant D as Azure SQL
+
+    U->>W: POST {question}
+    W->>A: POST (x-trace-id)
+    A->>D: SELECT last 10 messages; INSERT messages (user)
+    A->>S: hybrid query (top 5)
+    A-->>W: event: sources [{title, path}]
+    A->>M: history (≤10) + context + question, streamed
+    A-->>W: event: token …
+    A->>D: INSERT messages (assistant, citations); UPDATE conversations.updated_at
+    A-->>W: event: done
+    W-->>U: same frames, same trace id
+```
 
 ### B9. Change log of this document
 
-| Date | Who | What changed |
-| ---- | --- | ------------ |
-|      |     |              |
+| Date       | Who         | What changed                                                                                                                                                                         |
+| ---------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 2026-10-06 | Maged Hazem | `/init-project`: project named, B1 and B7 recorded                                                                                                                                   |
+| 2026-10-06 | Maged Hazem | B1–B8 written from the team design (chat with citations, conversation history, knowledge base, flow)                                                                                 |
+| 2026-10-06 | Maged Hazem | Architecture review applied: phase 1 = F1 + F2 (CLI ingest), F3 → phase 2; streaming error rule; citation shape; history from the DB; routes replace `assistant`; ADR-0013/0014/0015 |

@@ -7,6 +7,8 @@ external APIs only through `traced_client`._
 
 ## External databases
 
+**None at `/init-project` (2026-10-06).** Copy the template below once one is named.
+
 ### `<system name>`
 
 | Item                         | Value                                                                                    |

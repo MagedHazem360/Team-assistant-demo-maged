@@ -4,23 +4,24 @@
 using './main.bicep'
 
 param environment = 'prod'
-param projectSlug = 'ai-accelerator'
+param projectSlug = 'team-assistant'
 param platform = loadJsonContent('platform/prod.json')
 
 param deployContainerApps = false
 
-param apiImage = '${loadJsonContent('platform/prod.json').containerRegistry.loginServer}/ai-accelerator-api:prod'
-param webImage = '${loadJsonContent('platform/prod.json').containerRegistry.loginServer}/ai-accelerator-web:prod'
+param apiImage = '${loadJsonContent('platform/prod.json').containerRegistry.loginServer}/team-assistant-api:prod'
+param webImage = '${loadJsonContent('platform/prod.json').containerRegistry.loginServer}/team-assistant-web:prod'
 
 param sqlEntraAdmin = {
-  login: 'ai-prod-sql-admins'
+  login: 'team-assistant-prod-sql-admins' // placeholder — the real Entra group from the cloud team
   objectId: '00000000-0000-0000-0000-000000000000'
   principalType: 'Group'
 }
 param sqlSku = { name: 'S1', tier: 'Standard' }
 param developerIpAllowlist = {}
 
-param alertEmails = ['ops@example.invalid']
+param alertEmails = ['mhazem@orion360.com']
+param searchIndexName = 'team-assistant-docs'
 param retentionInDays = 90
 param logAnalyticsDailyCapGb = -1
 param dailyIngestionAlertThresholdGb = 10
