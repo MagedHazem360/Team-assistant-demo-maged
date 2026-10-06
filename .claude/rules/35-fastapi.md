@@ -34,7 +34,7 @@ Python 3.14 + FastAPI, managed by **uv**, port 8000, trace origin `0c70`. See
   the `lifespan` shutdown.
 - Routes get a DB handle **only** via `Depends(get_session)` (one `AsyncSession` per request);
   no module-level sessions, no sync engine.
-- Alembic is wired but idle: `uv run alembic upgrade head --sql` (offline review, no DB);
+- Alembic holds the chat-history revision: `uv run alembic upgrade head --sql` (offline review, no DB);
   `revision --autogenerate` / `check` need the **dev Azure SQL** database reachable (there is no
   local database); **`upgrade` is the migration pipeline's or a named human's action.**
 - The engine is **Azure SQL Database** via `mssql+aioodbc` (ADR-0008); an optional second,

@@ -1,6 +1,6 @@
 ---
 name: migration-author
-description: Authors Alembic migrations (forward + mandatory downgrade + SQL-Server-safe DDL) for apps/api's SQLAlchemy 2 async models on Azure SQL Database. Refuses destructive ops without explicit confirmation. NOTE — the project currently runs NO migrations (empty model set, empty alembic/versions/); invoke this when the team is ready to start migrating real models.
+description: Authors Alembic migrations (forward + mandatory downgrade + SQL-Server-safe DDL) for apps/api's SQLAlchemy 2 async models on Azure SQL Database. Refuses destructive ops without explicit confirmation. The first revision is 3f1c2a9b7d10 (conversations, messages); new revisions revise the current head.
 tools: Read, Edit, Write, Bash, Grep, Glob
 model: sonnet
 ---

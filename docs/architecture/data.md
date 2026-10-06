@@ -2,8 +2,8 @@
 
 `apps/api` owns the database. It uses **SQLAlchemy 2.0 (asyncio)** on the **`mssql+aioodbc`**
 driver (aioodbc → pyodbc → Microsoft ODBC Driver 18 for SQL Server), with **Alembic** for
-migrations, against **Azure SQL Database** — and today it ships an **empty model set with no
-migrations run**, on purpose. A second, **read-only** engine can reach an external database the
+migrations, against **Azure SQL Database** — today with the chat-history models (`Conversation`, `Message`) and their first revision
+(`3f1c2a9b7d10`), applied to the dev database by a named human (2026-10-06). A second, **read-only** engine can reach an external database the
 project does not own.
 
 Two facts shape everything below. **There is no local database, ever** (team decision D2): the
@@ -190,11 +190,12 @@ Every step in order; the ones marked **human** are never taken by an agent.
 
 ---
 
-## The placeholder model set, and how to extend it
+## The model set, and how to extend it
 
-[`apps/api/app/models/__init__.py`](../../apps/api/app/models/__init__.py) is **empty on
-purpose** — `__all__ = []` and one commented example model. `alembic/versions/` holds no
-revisions. The service boots, Alembic is wired, and nothing has been migrated.
+[`apps/api/app/models/__init__.py`](../../apps/api/app/models/__init__.py) registers
+`conversation.py` (`Conversation`, `Message` — `docs/design/db-design.md`). `alembic/versions/`
+holds one revision, `3f1c2a9b7d10`, hand-written and drift-checked against the models offline
+(`tests/test_models_conversation.py`).
 
 Growing it into a real data layer:
 
@@ -212,9 +213,8 @@ Growing it into a real data layer:
 4. **Generate a revision — against the dev database** (lifecycle step 4). Review the generated
    `upgrade()` **and** `downgrade()`; every revision ships both. The post-write hooks in
    `alembic.ini` run `ruff format` / `ruff check --fix` on the new file.
-5. **Review the SQL offline — no database needed** (step 5). Today this prints only the
-   transaction wrapper (`BEGIN TRANSACTION;` … `COMMIT;`), because there are no revisions;
-   `alembic heads` prints nothing.
+5. **Review the SQL offline — no database needed** (step 5). Today this prints the DDL of
+   `3f1c2a9b7d10`; `alembic heads` prints `3f1c2a9b7d10 (head)`.
 6. **Apply it** — step 6.
 
 Steps 1–3 and 5 need no database. Step 4, step 6 and
@@ -289,8 +289,8 @@ Why engine-level, and how it is registered:
 The trade-off, stated plainly: spans are engine-level SQL, not ORM-level semantics (`select(Widget)`
 with model attributes). Revisit only if model-level span semantics become a real debugging need.
 
-Runtime proof is still pending — the model set is a placeholder and the dev database is not yet
-applied, so "a query lands in `AppDependencies`" is verified during the post-deploy smoke
+Runtime proof is still pending — the first revision is applied to the dev database but no route
+queries it yet, so "a query lands in `AppDependencies`" is verified during the post-deploy smoke
 ([`OBSERVABILITY-ROADMAP.md`](../../OBSERVABILITY-ROADMAP.md),
 [post-deploy smoke runbook](../operations/runbooks/post-deploy-smoke.md)).
 

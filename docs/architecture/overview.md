@@ -1,6 +1,6 @@
 # System overview
 
-The AI Accelerator is the brandless **starter template / accelerator** that the [Diriyah Company](https://www.diriyahcompany.sa/en/)
+The Team Assistant is the brandless **starter template / accelerator** that the [Diriyah Company](https://www.diriyahcompany.sa/en/)
 AI team uses for its AI projects, built and maintained by [Orion Digital Solutions](https://www.orion360.com/). A project clones it,
 renames the placeholders, and builds features on a foundation that already works end to end.
 
@@ -20,7 +20,7 @@ project's job.
 | **Cross-service foundation**     | two services (BFF + backend), end-to-end `trace_id`, Azure/OTel observability, `ping`/`health`/`info`                                                                                                       | ✅ Included (baseline)                                                             |
 | **Business features**            | the project's actual domain modules, built on the foundation                                                                                                                                                | ⛔ Not included — built per project                                                |
 | **Auth / RBAC**                  | authentication & authorization                                                                                                                                                                              | ⛔ Not included — needs a threat model + ADR                                       |
-| **Database schema & migrations** | SQLAlchemy 2 async + Alembic (in `apps/api`) on Azure SQL Database — never local                                                                                                                            | ⏳ Empty model set, Alembic wired, no migrations; `migrate.yml` applies            |
+| **Database schema & migrations** | SQLAlchemy 2 async + Alembic (in `apps/api`) on Azure SQL Database — never local                                                                                                                            | ✅ `Conversation`/`Message` + revision `3f1c2a9b7d10`, applied to dev (2026-10-06) |
 | **Azure deployment (IaC)**       | Bicep, two tiers (ADR-0012): the project's container apps, Azure SQL, storage, Key Vault, App Insights, Search index on the cloud team's shared Foundry / Container Apps Environment / registry / AI Search | ⏳ Authored and `bicep build`-clean; not yet deployed (manifests are placeholders) |
 
 (The same table, and the caveats around it, are in the root
@@ -55,7 +55,7 @@ outbound from the platform.
 flowchart LR
     user(["Browser user"])
 
-    subgraph platform["AI Accelerator platform"]
+    subgraph platform["Team Assistant platform"]
         web["apps/web<br/>Next.js BFF + UI"]
         py["apps/api<br/>FastAPI"]
     end
@@ -121,8 +121,8 @@ flowchart TB
 
 | App        | Stack                                                        | Port | Trace origin | OTel service name (cloud role) |
 | ---------- | ------------------------------------------------------------ | ---- | ------------ | ------------------------------ |
-| `apps/web` | Next.js 16.2.6 (App Router), BFF + UI                        | 3000 | `0eb0`       | `ai-accelerator-web`           |
-| `apps/api` | Python 3.14 + FastAPI + SQLAlchemy 2 async + Alembic, via uv | 8000 | `0c70`       | `ai-accelerator-api`           |
+| `apps/web` | Next.js 16.2.6 (App Router), BFF + UI                        | 3000 | `0eb0`       | `team-assistant-web`           |
+| `apps/api` | Python 3.14 + FastAPI + SQLAlchemy 2 async + Alembic, via uv | 8000 | `0c70`       | `team-assistant-api`           |
 
 Package managers: pnpm `11.5.2` for `web`, uv for `api`. Node **24** is pinned across
 `.nvmrc`, the web Dockerfile, and its `engines` field. Both services are at version `0.0.0` and
@@ -289,7 +289,7 @@ defined way in.
 | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | **Auth / RBAC**                     | Authentication shapes the threat surface, the trace/telemetry attributes, and the BFF contract — it cannot be retrofitted casually | Threat model (`threat-modeler`) **and** an ADR first, then implementation                                                               |
 | **Business features**               | The template is domain-agnostic on purpose                                                                                         | Build under `/v1` per [ADR-0001](../adr/0001-api-versioning.md)                                                                         |
-| **Database migrations**             | No reachable database is assumed; the model set is an empty placeholder and `alembic/versions/` is empty                           | Add models, `alembic revision --autogenerate` against the dev Azure SQL database, then the gated `migrate.yml` — see [data.md](data.md) |
+| **Database migrations**             | The first models and revision (`3f1c2a9b7d10`) exist; applying them to the dev database is a named human's step                    | Add models, `alembic revision --autogenerate` against the dev Azure SQL database, then the gated `migrate.yml` — see [data.md](data.md) |
 | **A shared code package**           | Two runtimes, two lockfiles; a shared package would re-introduce the coupling the layout avoids                                    | ADR first ([`00-architecture.md`](../../.claude/rules/00-architecture.md))                                                              |
 | **A local monitoring stack**        | The same code path must run locally and deployed; a local collector would create a second path that drifts                         | Point `APPLICATIONINSIGHTS_CONNECTION_STRING` at a real resource — see [observability.md](observability.md)                             |
 | **A database container**            | Every database is Azure SQL by team decision (ADR-0008); a container would hide connection/TLS/identity realities                  | Point `DATABASE_URL` at the dev Azure SQL database — see [data.md](data.md)                                                             |
