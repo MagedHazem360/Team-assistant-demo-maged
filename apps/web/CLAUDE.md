@@ -25,6 +25,10 @@ URL.
   `withBff`, call upstream with `fetchUpstream`; on upstream failure return `502` with a
   `trace_id` (and `target: 'api'`) so the UI degrades gracefully.
 - `src/app/health/route.ts` — `/health`.
+- `src/app/api/v1/conversations/route.ts` (`POST`, `GET ?limit=`) + `[id]/route.ts` (`GET`) —
+  the chat-history BFF (roadmap web 1.1): proxy `${API_BASE_URL}/v1/conversations…` via
+  `src/lib/conversations.ts` (`proxyJson`, 35 s bound for the serverless DB, body cap 4 KB, UUID-checked
+  `{id}`, only `title`/`limit` forwarded) or serve `src/mocks/conversations.ts` with `MOCK_UPSTREAM=true`.
 - `src/app/api/v1/assistant/ask/route.ts` + `ask/stream/route.ts` — **example business routes**
   (JSON + SSE) that proxy `${API_BASE_URL}/v1/assistant/…` or, with `MOCK_UPSTREAM=true`, serve
   `src/mocks/assistant.ts`. `src/app/chat/page.tsx` — the example chat page on them.

@@ -7,6 +7,22 @@ The two services version independently.
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-10-06
+
+### Added
+
+- **Conversation BFF routes** (roadmap web 1.1): `POST /api/v1/conversations`,
+  `GET /api/v1/conversations?limit=`, `GET /api/v1/conversations/{id}` → the api's
+  `/v1/conversations…`, carrying and echoing `x-trace-id`; api responses (and its
+  `{error, trace_id}` errors) pass through with their status; an unreachable api is `502
+upstream_unreachable`. The BFF forwards only `title` / `limit`, checks `{id}` as a UUID and caps
+  request bodies at 4 KB (`413 payload_too_large`), so a client can never steer the upstream path
+  or query. Calls are bounded at 35 s (serverless DB cold start). Shared helper
+  `src/lib/conversations.ts`.
+- `MOCK_UPSTREAM=true` fixtures `src/mocks/conversations.ts` (list, empty list, a conversation
+  with messages and citations, created, and a `404` for any other id), typed from
+  `src/lib/api-types.ts`.
+
 ## [0.1.0] — 2026-09-28
 
 ### Added

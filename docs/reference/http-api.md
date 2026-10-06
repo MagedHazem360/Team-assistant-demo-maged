@@ -13,17 +13,22 @@ removed in [ADR-0003](../adr/0003-remove-nestjs-api-layer.md).
 
 ## Route map
 
-| Method | Path                     | Service          | Purpose                                             | Versioned?       |
-| ------ | ------------------------ | ---------------- | --------------------------------------------------- | ---------------- |
-| GET    | `/ping`                  | `apps/api`       | Liveness greeting                                   | No (operational) |
-| GET    | `/info`                  | `apps/api`       | Status/version/runtime report                       | No (operational) |
-| GET    | `/health`                | `apps/api`       | Health + observability state                        | No (operational) |
-| POST   | `/v1/conversations`      | `apps/api`       | Start a conversation                                | Yes (`/v1`)      |
-| GET    | `/v1/conversations`      | `apps/api`       | List conversations, newest first                    | Yes (`/v1`)      |
-| GET    | `/v1/conversations/{id}` | `apps/api`       | A conversation with its messages                    | Yes (`/v1`)      |
-| GET    | `/api/ping-backend`      | `apps/web` (BFF) | Proxies `apps/api` `/ping`                          | No (demo route)  |
-| GET    | `/api/info-backend`      | `apps/web` (BFF) | Proxies `apps/api` `/info`                          | No (demo route)  |
-| GET    | `/health`                | `apps/web` (BFF) | Own health + observability state (no upstream call) | No (operational) |
+| Method | Path                                | Service          | Purpose                                                                | Versioned?       |
+| ------ | ----------------------------------- | ---------------- | ---------------------------------------------------------------------- | ---------------- |
+| GET    | `/ping`                             | `apps/api`       | Liveness greeting                                                      | No (operational) |
+| GET    | `/info`                             | `apps/api`       | Status/version/runtime report                                          | No (operational) |
+| GET    | `/health`                           | `apps/api`       | Health + observability state                                           | No (operational) |
+| POST   | `/v1/conversations`                 | `apps/api`       | Start a conversation                                                   | Yes (`/v1`)      |
+| GET    | `/v1/conversations`                 | `apps/api`       | List conversations, newest first                                       | Yes (`/v1`)      |
+| GET    | `/v1/conversations/{id}`            | `apps/api`       | A conversation with its messages                                       | Yes (`/v1`)      |
+| POST   | `/v1/conversations/{id}/ask`        | `apps/api`       | Ask a question (JSON answer + citations)                               | Yes (`/v1`)      |
+| POST   | `/v1/conversations/{id}/ask/stream` | `apps/api`       | Ask a question, streamed (SSE)                                         | Yes (`/v1`)      |
+| POST   | `/api/v1/conversations`             | `apps/web` (BFF) | Proxies `POST /v1/conversations` (forwards `title` only; body ≤ 4 KB)  | Yes (`/v1`)      |
+| GET    | `/api/v1/conversations`             | `apps/web` (BFF) | Proxies `GET /v1/conversations` (forwards `limit` 1–100 only)          | Yes (`/v1`)      |
+| GET    | `/api/v1/conversations/{id}`        | `apps/web` (BFF) | Proxies `GET /v1/conversations/{id}` (`id` must be a UUID, else `422`) | Yes (`/v1`)      |
+| GET    | `/api/ping-backend`                 | `apps/web` (BFF) | Proxies `apps/api` `/ping`                                             | No (demo route)  |
+| GET    | `/api/info-backend`                 | `apps/web` (BFF) | Proxies `apps/api` `/info`                                             | No (demo route)  |
+| GET    | `/health`                           | `apps/web` (BFF) | Own health + observability state (no upstream call)                    | No (operational) |
 
 Business endpoints, when they arrive, are `/v1/<feature>` on the api (routers attached to
 `v1_router`) and `/api/v1/<feature>` on web (folder-enforced). See [Versioning](#versioning).

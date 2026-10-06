@@ -14,7 +14,7 @@ these items adapt them; they do not start from scratch.
 
 ### 1.1 — Conversation BFF routes + typed fixtures
 
-- **status:** todo
+- **status:** done
 - **depends_on:** [api:1.2]
 - **layers:** [bff]
 - **acceptance:**
@@ -22,9 +22,16 @@ these items adapt them; they do not start from scratch.
   - `src/lib/api-types.ts` regenerated from `docs/reference/openapi.json` (`pnpm -C apps/web api-types`); `MOCK_UPSTREAM=true` fixtures for all three routes (list with a few conversations, an empty list, a conversation with messages and citations, a `404`) are typed against it
   - works against `MOCK_UPSTREAM=true` fixtures until api:1.2 is live
 - **how_to_test:**
+  - `pnpm -C apps/web exec vitest run src/app/api/v1/conversations` → 22 passed (both modes; only `title`/`limit` forwarded, UUID-checked id, 413 body cap, api errors passed through, 502 on an unreachable api, `x-trace-id` forwarded and echoed)
+  - `just test` → web 158, api 297 passed
+  - live, real mode — terminal 1 (from `apps/api`): `uv run uvicorn app.main:app --port 8000`; terminal 2 (from `apps/web`): `pnpm dev`; terminal 3: `Invoke-RestMethod "http://localhost:3000/api/v1/conversations?limit=5" | ConvertTo-Json -Depth 5` → your real conversations; `Invoke-RestMethod -Method Post http://localhost:3000/api/v1/conversations -ContentType application/json -Body '{}'` → a new one; `Invoke-RestMethod http://localhost:3000/api/v1/conversations/<id> | ConvertTo-Json -Depth 5` → it, with messages
+  - mock mode — stop `pnpm dev`, then `$env:MOCK_UPSTREAM='true'; pnpm dev` → the same calls return the fixtures (header `x-mock-upstream: true`), no api needed
 - **needs_human:**
+  - the live check above
 - **notes:**
   - 2026-10-06 — planned by `/plan-roadmap web`
+  - 2026-10-06 — started and implemented by Claude (branch `feat/web-1.1-conversation-bff`); awaiting test by Maged Hazem. Files: `src/app/api/v1/conversations/route.ts`, `[id]/route.ts`, `routes.test.ts` (new), `src/lib/conversations.ts` (new), `src/mocks/conversations.ts` (new), `apps/web/CLAUDE.md`, `docs/reference/http-api.md` (route map, incl. the api `/ask` rows), web 0.2.0 (CHANGELOG, package.json, root CLAUDE.md). Applied from the api reviews: UUID-checked `{id}`, no arbitrary query strings forwarded, 4 KB body cap. Agent reviews unavailable (usage limit); manual — BFF boundary intact (server-side `API_BASE_URL`, no `NEXT_PUBLIC_*`), `fetchUpstream` only, route-class metrics (never the id), upstream failures log the error kind only
+  - 2026-10-06 — confirmed by Maged Hazem (live through the BFF on :3000 against the local api)
 
 ### 1.2 — Ask routes for a conversation (JSON + SSE), replacing the template's `assistant` routes
 
