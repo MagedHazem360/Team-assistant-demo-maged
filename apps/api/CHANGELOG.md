@@ -7,6 +7,39 @@ The two services version independently.
 
 ## [Unreleased]
 
+## [0.4.1] — 2026-10-06
+
+### Fixed
+
+- **`alembic` and `python -m app.ai.ingest` now read `apps/api/.env`** (`load_local_env()`, as
+  the service already did). Before, both fell back to placeholders from a plain terminal —
+  Alembic tried `your-server.database.windows.net` and ingest raised `AINotConfigured` — unless
+  every variable was exported in the shell. Values set in the shell still win; pipelines have no
+  `.env` and are unaffected.
+- **The test suite no longer reads a developer's `.env`.** `tests/conftest.py` points
+  `load_local_env()` at a file that never exists (importing `app.main` used to load the real
+  one, so a local database host showed up in test logs). `app.config.SERVICE_ENV_FILE` keeps the
+  real path.
+
+## [0.4.0] — 2026-10-06
+
+### Added
+
+- **Chat-history models** `app/models/conversation.py` (roadmap api 1.1, `ARCHITECTURE.md` B4):
+  `Conversation` (`conversations`: UUID id, `nvarchar(200)` title defaulting to "New conversation",
+  `datetime2(3)` UTC `created_at`/`updated_at`) and `Message` (`messages`: FK to
+  `conversations.id` with `NO ACTION`, `role` restricted to `user`/`assistant`, `nvarchar(max)`
+  content and JSON `citations`, nullable `token_count`, index `(conversation_id, created_at)`).
+  No owner column — conversations are shared until auth lands (ADR-0013).
+- **First Alembic revision** `3f1c2a9b7d10` creating both tables, with a full `downgrade()`.
+  Hand-written; a test checks it renders exactly the model DDL offline. Not applied by this
+  change — a named human applies it to the dev database.
+
+### Changed
+
+- `tests/test_alembic.py` now expects one linear revision history (it asserted an empty
+  `alembic/versions/`) and also renders the downgrade offline.
+
 ## [0.3.0] — 2026-10-04
 
 ### Added

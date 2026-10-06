@@ -34,7 +34,7 @@ Run everything: **`make test`** (fast) / **`make test-cov`** (coverage, as CI do
 
 ## Rules
 
-- **Offline always** — no real DB, no Azure, no network. Mock outbound `fetch`/`httpx`.
+- **Offline always** — no real DB, no Azure, no network. Mock outbound `fetch`/`httpx`. The api suite never reads a developer's `apps/api/.env` (`tests/conftest.py` redirects `load_local_env()`); a test that needs env values sets them itself.
 - **Database tests (api, `25-sqlalchemy.md`):** unit tests never need a database — the engine is lazy, route tests override the session dependency (`app.dependency_overrides[get_session] = fake`), and DB-layer tests assert `pyodbc.connect` is never called (`tests/test_db_*.py`, `tests/test_alembic.py` show the pattern; Alembic is exercised in **offline** mode only, rendering T-SQL). The external read-only engine follows the same pattern (`tests/test_db_external.py`; override `get_external_session`). A real-DB integration tier is **opt-in**: gate it on a reachable `DATABASE_URL` (the dev Azure SQL database — there is no local one) and `pytest.skip` otherwise — never make CI depend on a database.
 - Don't pad: if a change has one testable layer, write only that layer. Favor the pyramid (many unit, fewer integration, e2e only for journeys).
 - Silence logs in tests via `LOG_LEVEL=silent` (Node setup files already do this).

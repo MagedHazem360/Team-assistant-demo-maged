@@ -1,4 +1,4 @@
-"""Alembic is wired but idle (ADR-0004 / ADR-0008): no hard-coded URL, no revisions,
+"""Alembic wiring (ADR-0004 / ADR-0008): no hard-coded URL, one linear revision history,
 and the async ``env.py`` runs in OFFLINE mode with no database and no connection
 — rendering for the SQL Server dialect.
 """
@@ -57,10 +57,14 @@ def test_script_location_resolves_to_the_alembic_dir() -> None:
     assert (SERVICE_ROOT / "alembic" / "script.py.mako").is_file()
 
 
-def test_versions_dir_exists_and_holds_no_revisions() -> None:
+FIRST_REVISION = "3f1c2a9b7d10"  # create conversations and messages
+
+
+def test_versions_form_one_linear_history_starting_at_the_first_revision() -> None:
     assert VERSIONS.is_dir()
-    assert [p.name for p in VERSIONS.iterdir() if p.suffix == ".py"] == []
-    assert ScriptDirectory.from_config(_config()).get_heads() == []
+    script = ScriptDirectory.from_config(_config())
+    assert len(script.get_heads()) == 1  # no branches
+    assert script.get_base() == FIRST_REVISION
 
 
 def test_env_py_reads_url_from_settings_and_targets_base_metadata() -> None:
@@ -87,8 +91,62 @@ def test_offline_upgrade_runs_without_a_database(monkeypatch: pytest.MonkeyPatch
     command.upgrade(_config(output), "head", sql=True)  # `alembic upgrade head --sql`
 
     assert attempts == []
-    # No revisions -> no DDL is emitted; only the transaction wrapper may appear.
-    # The SQL Server dialect renders it as BEGIN TRANSACTION / COMMIT (+ GO
-    # batch separators); nothing else is acceptable.
-    emitted = [line.strip().rstrip(";") for line in output.getvalue().splitlines() if line.strip()]
-    assert all(line in ("BEGIN TRANSACTION", "BEGIN", "COMMIT", "GO") for line in emitted), emitted
+    sql = output.getvalue()
+    assert sql.lstrip().startswith("BEGIN TRANSACTION")
+    assert "CREATE TABLE conversations" in sql
+    assert "CREATE TABLE messages" in sql
+    assert f"VALUES ('{FIRST_REVISION}')" in sql
+
+
+@pytest.mark.usefixtures("_restore_logging")
+def test_offline_downgrade_to_base_drops_what_upgrade_created(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(pyodbc, "connect", _refuse_connect)
+    monkeypatch.setenv("DATABASE_URL", TEST_URL)
+
+    output = io.StringIO()
+    command.downgrade(_config(output), f"{FIRST_REVISION}:base", sql=True)
+
+    sql = output.getvalue()
+    assert "DROP INDEX ix_messages_conversation_id ON messages" in sql
+    # messages first: it references conversations
+    assert sql.index("DROP TABLE messages") < sql.index("DROP TABLE conversations")
+
+
+def _refuse_connect(*args: Any, **kwargs: Any) -> None:
+    raise AssertionError("offline mode must never connect")
+
+
+@pytest.mark.usefixtures("_restore_logging")
+def test_env_py_loads_the_local_env_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`alembic` run from a plain terminal reads apps/api/.env like the service does."""
+    import app.config
+
+    env_file = tmp_path / ".env"
+    env_file.write_text(f"DATABASE_URL={TEST_URL}\n", encoding="utf-8")
+    monkeypatch.setattr(app.config, "LOCAL_ENV_FILE", env_file)
+    monkeypatch.setenv("DATABASE_URL", "placeholder")  # registers the restore …
+    monkeypatch.delenv("DATABASE_URL")  # … then starts from "not set in the shell"
+    monkeypatch.setattr(pyodbc, "connect", _refuse_connect)
+
+    command.upgrade(_config(io.StringIO()), "head", sql=True)
+
+    assert app.config.get_settings().database_url == TEST_URL
+
+
+@pytest.mark.usefixtures("_restore_logging")
+def test_env_py_keeps_a_database_url_set_in_the_shell(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import app.config
+
+    env_file = tmp_path / ".env"
+    env_file.write_text("DATABASE_URL=mssql+aioodbc://from-file.invalid/x\n", encoding="utf-8")
+    monkeypatch.setattr(app.config, "LOCAL_ENV_FILE", env_file)
+    monkeypatch.setenv("DATABASE_URL", TEST_URL)
+    monkeypatch.setattr(pyodbc, "connect", _refuse_connect)
+
+    command.upgrade(_config(io.StringIO()), "head", sql=True)
+
+    assert app.config.get_settings().database_url == TEST_URL

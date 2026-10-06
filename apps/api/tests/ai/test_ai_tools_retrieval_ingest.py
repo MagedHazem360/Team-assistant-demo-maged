@@ -196,3 +196,30 @@ def test_load_path_reads_text_files_only(tmp_path: Path) -> None:
     docs = ingest.load_path(tmp_path)
     assert [d.text for d in docs] == ["alpha", "beta"]
     assert ingest.load_path(tmp_path / "a.md")[0].source.endswith("a.md")
+
+
+def test_ingest_cli_loads_the_local_env_file_first(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`python -m app.ai.ingest` from a plain terminal reads apps/api/.env like the service."""
+    import app.config
+
+    env_file = tmp_path / ".env"
+    env_file.write_text("AZURE_SEARCH_INDEX=from-env-file\n", encoding="utf-8")
+    monkeypatch.setattr(app.config, "LOCAL_ENV_FILE", env_file)
+    monkeypatch.setenv("AZURE_SEARCH_INDEX", "placeholder")  # registers the restore …
+    monkeypatch.delenv("AZURE_SEARCH_INDEX")  # … then starts from "not set in the shell"
+
+    seen: dict[str, str | None] = {}
+
+    async def fake_run(argv: object) -> ingest.IngestReport:
+        seen["index"] = ingest.get_ai_settings().search_index
+        return ingest.IngestReport()
+
+    monkeypatch.setattr(ingest, "run", fake_run)
+    monkeypatch.setattr("sys.argv", ["ingest", str(tmp_path)])
+
+    ingest.main()
+
+    assert seen["index"] == "from-env-file"
+    assert "documents=0" in capsys.readouterr().out

@@ -1,8 +1,8 @@
 # apps/api — CLAUDE.md
 
-Python 3.14 + FastAPI service for the **AI Accelerator** (the brandless starter template
+Python 3.14 + FastAPI service for the **Team Assistant** (the brandless starter template
 Orion Digital Solutions built for the Diriyah Company AI team), managed by **uv**. Port **8000**,
-trace origin **`0c70`**, OTEL service `ai-accelerator-api`. Project-wide rules and the
+trace origin **`0c70`**, OTEL service `team-assistant-api`. Project-wide rules and the
 shared `trace_id` / observability contract live in the root [CLAUDE.md](../../CLAUDE.md) and
 [README.md](../../README.md); service overview in [README.md](README.md) (this folder). Treat
 this as a starting map; read the actual files when you need detail.
@@ -41,7 +41,7 @@ this as a starting map; read the actual files when you need detail.
   **`TELEMETRY_AUTH_MODE`** (`managed_identity` → Entra ID credential; a mistyped value
   disables observability VISIBLY — rule 60 → _Ingestion auth_). See
   `.claude/rules/60-observability.md`.
-- `metrics.py` — `get_meter(scope)` (namespaced `ai-accelerator.<scope>`, no-op when degraded),
+- `metrics.py` — `get_meter(scope)` (namespaced `team-assistant.<scope>`, no-op when degraded),
   `status_class`/`resolve_target` (bounded labels), starter instruments: request-duration +
   chain-hop histograms. **Bounded attributes only** — rule 60 → _Metrics & events_.
 - `events.py` — `track_event(name, attrs)` → App Insights `customEvents` (via the
@@ -56,16 +56,20 @@ this as a starting map; read the actual files when you need detail.
 - `config.py` — env-driven `Settings` (`APP_ENV`, `OTEL_SERVICE_NAME`, `PORT`, connection string,
   `DATABASE_URL` with the Azure SQL placeholder default, optional `EXTERNAL_DATABASE_URL`).
   `load_local_env()` loads the OPTIONAL `apps/api/.env` at startup (no-op when absent, never
-  overrides ambient env) — no uvicorn `--env-file` flag anywhere.
+  overrides ambient env) — no uvicorn `--env-file` flag anywhere. The CLIs call it too
+  (`alembic/env.py`, `python -m app.ai.ingest`), so they work from a plain terminal.
+  `tests/conftest.py` points it at a file that never exists: tests never read your `.env`.
 - `db/` — the SQLAlchemy 2 **async** layer on **Azure SQL** (`mssql+aioodbc`, ADR-0008):
   `base.py` (`Base` + constraint naming convention), `engine.py` (`get_engine()` **lazy
   singleton**, `dispose_engine()`), `session.py` (`get_session()` FastAPI dependency — the ONLY
   way routes get a handle on the project DB), `external.py` (second lazy **read-only** engine
   for `EXTERNAL_DATABASE_URL`: `get_external_session()`, non-SELECT statements refused).
-- `models/` — 2.0-style `Mapped[]` models subclassing `app.db.Base`; **empty placeholder** today
-  (one commented example). Import new model modules in `models/__init__.py` so Alembic sees them.
+- `models/` — 2.0-style `Mapped[]` models subclassing `app.db.Base`: `conversation.py`
+  (`Conversation`, `Message` — chat history, `docs/design/db-design.md`). Import new model modules in
+  `models/__init__.py` so Alembic sees them.
 - `../alembic/` + `../alembic.ini` — Alembic (async `env.py`, URL from `DATABASE_URL` via
-  `app.config`, never from the ini); `versions/` is **empty** — migrations are not run.
+  `app.config`, never from the ini); `versions/` holds `3f1c2a9b7d10` (`conversations`, `messages`) — applied by a
+  named human, never by an agent.
 - `ai/` — the AI runtime (ADR-0009, rule 70): `config.py` (`AZURE_AI_*`/`AZURE_SEARCH_*`/`AI_*`),
   `client.py` (**the mock seam** — `get_chat_model()`/`get_embeddings()`, managed identity when
   deployed), `graph.py` (`build_graph()` → `retrieve → answer` LangGraph, `ask()`),

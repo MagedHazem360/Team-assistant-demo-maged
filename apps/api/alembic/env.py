@@ -29,8 +29,12 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import create_async_engine
 
 import app.models  # noqa: F401  — registers models on Base.metadata
-from app.config import get_settings
+from app.config import get_settings, load_local_env
 from app.db.base import Base
+
+# Local dev: read apps/api/.env like the service does (the shell's DATABASE_URL still wins;
+# pipelines have no .env and are unaffected).
+load_local_env()
 
 # Alembic Config object: access to alembic.ini values.
 config = context.config

@@ -16,7 +16,10 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 # apps/api/.env — the local-dev env file (copy of .env.example). Optional.
-LOCAL_ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
+SERVICE_ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
+# The file load_local_env() reads by default. tests/conftest.py points it elsewhere so the
+# suite never picks up a developer's real .env.
+LOCAL_ENV_FILE = SERVICE_ENV_FILE
 
 
 def load_local_env(path: Path | None = None) -> bool:
@@ -26,7 +29,8 @@ def load_local_env(path: Path | None = None) -> bool:
       never require a ``.env`` (Docker/Compose supply real env; tests run without one).
     - Never overrides ambient/shell env (``override=False``), matching the
       root/compose precedence rules documented in the README.
-    - Must run before anything reads settings, so ``app.main`` calls it first.
+    - Must run before anything reads settings, so ``app.main`` calls it first — and so do
+      the CLIs that run outside the service: ``alembic/env.py`` and ``app.ai.ingest``.
     """
     target = path or LOCAL_ENV_FILE
     if not target.is_file():
@@ -36,10 +40,10 @@ def load_local_env(path: Path | None = None) -> bool:
 
 # This service's fixed identity (part of the shared cross-service contract).
 SERVICE_NAME = "api"
-DEFAULT_OTEL_SERVICE_NAME = "ai-accelerator-api"
+DEFAULT_OTEL_SERVICE_NAME = "team-assistant-api"
 DEFAULT_PORT = 8000
 # Distribution name as declared in pyproject.toml ([project].name).
-DISTRIBUTION_NAME = "ai-accelerator-api"
+DISTRIBUTION_NAME = "team-assistant-api"
 # Placeholder DATABASE_URL — Azure SQL Database via the `mssql+aioodbc` dialect
 # (ADR-0008). The engine is lazy, so the baseline boots with this unreachable
 # placeholder — no connection is opened until the first query. Query-string

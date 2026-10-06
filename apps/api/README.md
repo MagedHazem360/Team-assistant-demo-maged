@@ -1,10 +1,10 @@
-# AI Accelerator — api service
+# Team Assistant — api service
 
-Python 3.14 + FastAPI service for the [AI Accelerator](../../README.md) — the brandless
+Python 3.14 + FastAPI service for the [Team Assistant](../../README.md) — the brandless
 starter template built by [Orion Digital Solutions](https://www.orion360.com/) for the [Diriyah Company](https://www.diriyahcompany.sa/en/) AI team — managed by
 [uv](https://docs.astral.sh/uv/).
 
-- Service identity: `api` · OTEL service `ai-accelerator-api` · trace origin `0c70`
+- Service identity: `api` · OTEL service `team-assistant-api` · trace origin `0c70`
 - Listens on port **8000** (shared contract: web=3000, api=8000)
 - The **sole backend**: the Next.js BFF (`apps/web`) is its only consumer (ADR-0003); it owns the
   database via SQLAlchemy 2 async + Alembic on Azure SQL (ADR-0008)
@@ -16,8 +16,9 @@ uv sync
 uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-(`apps/api/.env` — a copy of `.env.example` — is **optional**: `app.main` loads it via
-`load_local_env()` when it exists and never overrides ambient env. No `--env-file` flag is
+(`apps/api/.env` — a copy of `.env.example` — is **optional**: `app.main`, `alembic` and
+`python -m app.ai.ingest` load it via `load_local_env()` when it exists and never override ambient
+env; the test suite never reads it. No `--env-file` flag is
 needed; the root `make dev` / `just dev` script works without a `.env`.)
 
 Endpoints:
@@ -47,8 +48,8 @@ first query, so the baseline boots with the placeholder URL. Routes get a sessio
 refuses anything but `SELECT`. DB dependency spans come from the SQLAlchemy instrumentation
 registered in `app/observability.py`.
 
-Alembic is wired but idle (`alembic/versions/` is empty). Migrations are **never run by this
-project or its agents** — applying one is the Environment-gated `migrate.yml` workflow or a
+Alembic holds one revision, `3f1c2a9b7d10` (`conversations`, `messages`). Migrations are **never run by
+agents** — applying one is the Environment-gated `migrate.yml` workflow or a
 deliberate human step:
 
 ```bash
@@ -81,6 +82,6 @@ feature that calls the AI layer without them raises `AINotConfigured`. Conventio
 ## Docker
 
 ```bash
-docker build -t ai-accelerator-api .   # build context = apps/api; installs ODBC Driver 18
-docker run -p 8000:8000 ai-accelerator-api
+docker build -t team-assistant-api .   # build context = apps/api; installs ODBC Driver 18
+docker run -p 8000:8000 team-assistant-api
 ```

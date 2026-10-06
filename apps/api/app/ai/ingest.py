@@ -38,6 +38,7 @@ from app.ai.tools.retrieve import (
     build_search_client,
     build_search_credential,
 )
+from app.config import load_local_env
 from app.logging_config import configure_logging, get_logger
 
 CHUNK_INDEX_FIELD = "chunk_index"
@@ -228,6 +229,8 @@ async def run(argv: Sequence[str] | None = None) -> IngestReport:
 
 
 def main() -> None:
+    # Local dev: read apps/api/.env like the service does (the shell's values still win).
+    load_local_env()
     configure_logging()
     report = asyncio.run(run(sys.argv[1:]))
     print(

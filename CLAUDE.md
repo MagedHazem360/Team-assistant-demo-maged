@@ -1,23 +1,23 @@
-# CLAUDE.md — AI Accelerator
+# CLAUDE.md — Team Assistant
 
 Project-wide constitution for Claude. Follow the rules below on every task unless I explicitly
 override them. This file is the **map**, not the manual: load the deeper docs (per-app
 `CLAUDE.md`, `README.md`, `.claude/rules/`, `docs/`) **on demand** — don't bloat this file or
 assume it's the only source of truth.
 
-**What it is:** the **AI Accelerator** — a brandless starter/accelerator monorepo that the
-**Diriyah Company AI team** uses to speed up its AI projects, built and maintained by **Orion
-Digital Solutions** for the Diriyah Company. Teams clone it, rename it with `/rename-project`
-(see [`README.md`](README.md) → _Using this template_), and build the project's AI features
-on it; every
-project-identity string is a placeholder (`AI Accelerator` / `ai-accelerator` / `@ai-accelerator/*`),
+**What it is:** **Team Assistant** (slug `team-assistant`, npm scope `@team-assistant/*`)
+— an internal chat assistant (`/chat`) that answers questions from the team's own documentation
+(`docs/**/*.md`, indexed in Azure AI Search) with citations, and keeps conversation history in
+Azure SQL (`ARCHITECTURE.md` → Part B). Built on the
+**AI Accelerator**, the starter monorepo **Orion Digital Solutions** maintains for the
+**Diriyah Company AI team**,
 targeting Azure deployment via **Bicep** on a **shared, cloud-team-owned platform** (Foundry, Container Apps Environment, Container Registry, AI Search service pre-exist per environment; this project deploys only its own container apps, database, storage, Key Vault and Search index — ADR-0012; see [`README.md`](README.md) → _Scope & delivery status_). The repo is a polyglot
 monorepo of two independent services — `apps/web` (Next.js BFF + UI) and `apps/api`
 (FastAPI, the **sole backend** — ADR-0003) — wired with **end-to-end `trace_id` propagation**
 and **Azure Monitor / OpenTelemetry** observability in both. The browser only talks to the `web`
 BFF, which calls `api` server-side; the chain `web → api` carries one `x-trace-id`
 unchanged. **SQLAlchemy 2 async + Alembic** on **Azure SQL Database** via `mssql+aioodbc`
-(ADR-0008; empty model set, lazy engine, no migrations run, **never a local database**) plus an
+(ADR-0008; models `Conversation`/`Message` + one revision, lazy engine, migrations applied by a named human, **never a local database**) plus an
 optional **read-only** second engine for an external database. Currently a working baseline
 (ping/health) with no business features and no auth. The living architecture is
 [`docs/architecture/ARCHITECTURE.md`](docs/architecture/ARCHITECTURE.md); the template's own
@@ -41,7 +41,7 @@ backlog is [`docs/template-roadmap.md`](docs/template-roadmap.md).
 | Monorepo           | Independent packages — **no pnpm workspace, no Turborepo**; per-app lockfiles & Dockerfiles                                                                                                                                                                                                                                                                                                                                                                                                                 | `.claude/rules/00-architecture.md`                            |
 | `apps/web`         | Next.js **16.2.6** App Router, **BFF** (:3000, origin `0eb0`); Tailwind v4 + chat components, SSE pass-through, `MOCK_UPSTREAM` fixtures typed from the OpenAPI contract, RTL component tests (ADR-0010/0011)                                                                                                                                                                                                                                                                                               | `apps/web/CLAUDE.md`, `.claude/rules/30-nextjs.md`            |
 | `apps/api`         | Python **3.14** + FastAPI, **uv** (:8000, origin `0c70`) — the sole backend                                                                                                                                                                                                                                                                                                                                                                                                                                 | `apps/api/CLAUDE.md`, `.claude/rules/35-fastapi.md`           |
-| ORM / DB           | SQLAlchemy **2.0.54** async + aioodbc **0.5** / pyodbc **5.3** (ODBC Driver 18) + Alembic **1.20** → **Azure SQL Database**, **never local** (no container; DB created by the use-case Bicep deployment; no migrations run; `migrate.yml` applies). Optional read-only external engine (`EXTERNAL_DATABASE_URL`). Origin `0a71` of the former NestJS api stays retired — ADR-0005                                                                                                                           | `.claude/rules/25-sqlalchemy.md`, ADR-0008, `README.md`       |
+| ORM / DB           | SQLAlchemy **2.0.54** async + aioodbc **0.5** / pyodbc **5.3** (ODBC Driver 18) + Alembic **1.20** → **Azure SQL Database**, **never local** (no container; DB created by the use-case Bicep deployment; first revision `3f1c2a9b7d10`; a named human or `migrate.yml` applies). Optional read-only external engine (`EXTERNAL_DATABASE_URL`). Origin `0a71` of the former NestJS api stays retired — ADR-0005                                                                                              | `.claude/rules/25-sqlalchemy.md`, ADR-0008, `README.md`       |
 | Runtime / pkg mgrs | Node **24**, pnpm **11.5.2** (web), uv (api), TypeScript **5.9**                                                                                                                                                                                                                                                                                                                                                                                                                                            | `.nvmrc`, each `package.json`/`pyproject.toml`                |
 | Tracing            | `x-trace-id` = origin(4)+env(1)+random(27); ALS (Node) / contextvars (Python)                                                                                                                                                                                                                                                                                                                                                                                                                               | `.claude/rules/60-observability.md`, `README.md`              |
 | Observability      | OTel → Azure Monitor; pino (Node) / structlog (Python); **fail-safe degraded mode**                                                                                                                                                                                                                                                                                                                                                                                                                         | `.claude/rules/60-observability.md`                           |
@@ -93,7 +93,7 @@ These orient you fast; they are **not** the one-and-only place — read/search t
 12. **Clean up** temp files, scratch scripts, and debug logging before finishing.
 13. **Changelog** user-facing changes (per-service `CHANGELOG.md`, if present), following its format.
 14. **Keep orientation/context files in sync.** The Repo map (this file), per-app `CLAUDE.md`, `README.md`, `.env.example`s, and `docs/` are the **initial source of truth** — but **not the only place** (it's normal to read/search the code; if a doc disagrees with the code, the code wins — then fix the doc). Any change to architecture / layout / commands / env / ports / the trace-observability contract / the HTTP surface updates the affected file(s) in the same task.
-15. **Versioning — SemVer, per service.** `apps/web` and `apps/api` version independently (both currently `0.0.0` — pre-release, no features shipped yet); the root is the tooling wrapper, not a release unit. Bump from the **consumer's** perspective: MAJOR = breaking (removed/renamed endpoint/field, changed shape, broken trace/observability contract); MINOR = backward-compatible feature; PATCH = fix. Ask if unsure.
+15. **Versioning — SemVer, per service.** `apps/web` and `apps/api` version independently (currently `apps/web` `0.1.0`, `apps/api` `0.4.1` — pre-1.0); the root is the tooling wrapper, not a release unit. Bump from the **consumer's** perspective: MAJOR = breaking (removed/renamed endpoint/field, changed shape, broken trace/observability contract); MINOR = backward-compatible feature; PATCH = fix. Ask if unsure.
 
 ## Definition of Done
 

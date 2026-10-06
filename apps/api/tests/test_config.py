@@ -80,6 +80,12 @@ class TestLoadLocalEnv:
         monkeypatch.delenv("WT_TEST_FROM_FILE", raising=False)
 
     def test_default_target_is_the_service_env_file(self) -> None:
-        assert config.LOCAL_ENV_FILE.name == ".env"
-        assert config.LOCAL_ENV_FILE.parent.name == "api"
-        assert (config.LOCAL_ENV_FILE.parent / ".env.example").is_file()
+        assert config.SERVICE_ENV_FILE.name == ".env"
+        assert config.SERVICE_ENV_FILE.parent.name == "api"
+        assert (config.SERVICE_ENV_FILE.parent / ".env.example").is_file()
+
+    def test_suite_never_loads_the_developers_env_file(self) -> None:
+        # tests/conftest.py redirects the default target to a file that does not exist.
+        assert config.LOCAL_ENV_FILE != config.SERVICE_ENV_FILE
+        assert not config.LOCAL_ENV_FILE.exists()
+        assert config.load_local_env() is False
