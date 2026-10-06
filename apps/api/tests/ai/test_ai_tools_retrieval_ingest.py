@@ -24,6 +24,7 @@ from app.ai.tools.retrieve import (
     CONTENT_FIELD,
     ID_FIELD,
     SOURCE_FIELD,
+    TITLE_FIELD,
     VECTOR_FIELD,
     AzureSearchRetriever,
     NullRetriever,
@@ -124,16 +125,26 @@ def test_null_retriever_returns_nothing() -> None:
 
 def test_azure_search_retriever_runs_hybrid_query() -> None:
     client = FakeSearchClient(
-        rows=[{ID_FIELD: "a", CONTENT_FIELD: "text a", SOURCE_FIELD: "s1", "@search.score": 1.5}]
+        rows=[
+            {
+                ID_FIELD: "a",
+                CONTENT_FIELD: "text a",
+                SOURCE_FIELD: "s1",
+                TITLE_FIELD: "Title A",
+                "@search.score": 1.5,
+            }
+        ]
     )
     embeddings = FakeEmbeddings(dimensions=3)
     retriever = AzureSearchRetriever(client, embeddings)
     chunks = asyncio.run(retriever.retrieve("hello", top_k=3))
-    assert chunks == [{"id": "a", "content": "text a", "source": "s1", "score": 1.5}]
+    assert chunks == [
+        {"id": "a", "content": "text a", "source": "s1", "title": "Title A", "score": 1.5}
+    ]
     assert embeddings.queries == ["hello"]
     call = client.search_calls[0]
     assert call["search_text"] == "hello" and call["top"] == 3
-    assert call["select"] == [ID_FIELD, CONTENT_FIELD, SOURCE_FIELD]
+    assert call["select"] == [ID_FIELD, CONTENT_FIELD, SOURCE_FIELD, TITLE_FIELD]
     vq = call["vector_queries"][0]
     assert (
         vq.fields == VECTOR_FIELD and vq.k_nearest_neighbors == 3 and vq.vector == [5.0, 0.0, 0.0]
@@ -182,9 +193,11 @@ def test_ingest_documents_embeds_and_uploads_in_batches() -> None:
         ID_FIELD,
         CONTENT_FIELD,
         SOURCE_FIELD,
+        TITLE_FIELD,
         ingest.CHUNK_INDEX_FIELD,
         VECTOR_FIELD,
     }
+    assert first[TITLE_FIELD] == "a.md"  # no title given → the file name
     assert first[ID_FIELD] == ingest.chunk_id("a.md", 0)
     assert len(first[VECTOR_FIELD]) == 2
 
@@ -223,3 +236,249 @@ def test_ingest_cli_loads_the_local_env_file_first(
 
     assert seen["index"] == "from-env-file"
     assert "documents=0" in capsys.readouterr().out
+
+
+# ── titles, corpus-relative paths and --prune (roadmap api 2.1, ADR-0015) ────
+
+
+def test_build_index_has_a_searchable_title_field() -> None:
+    names = {f.name: f for f in ingest.build_index("docs", dimensions=8).fields}
+    assert names[TITLE_FIELD].searchable is True
+
+
+def test_document_title_is_the_first_h1_outside_code_fences() -> None:
+    text = "\ufeffIntro line\n```bash\n# not a title\n```\n## Sub\n# The Title \n# Second\n"
+    assert ingest.document_title(text, "fallback.md") == "The Title"
+    assert ingest.document_title("no heading here\n#hashtag", "x.md") == "x.md"
+    assert ingest.document_title("# \n", "empty.md") == "empty.md"
+
+
+def test_load_path_stores_corpus_relative_posix_sources_and_titles(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    corpus = tmp_path / "docs"
+    (corpus / "architecture").mkdir(parents=True)
+    (corpus / "architecture" / "tracing.md").write_text("# The trace_id contract\n", "utf-8")
+    (corpus / "notes.txt").write_text("# not a markdown title", "utf-8")
+
+    # the CLI is run as `ingest ../../docs` from apps/api — the prefix must not leak in
+    (tmp_path / "apps" / "api").mkdir(parents=True)
+    monkeypatch.chdir(tmp_path / "apps" / "api")
+    docs = {d.source: d for d in ingest.load_path(Path("../../docs"))}
+
+    assert set(docs) == {"architecture/tracing.md", "notes.txt"}
+    assert docs["architecture/tracing.md"].title == "The trace_id contract"
+    assert docs["notes.txt"].title == "notes.txt"  # .txt files use their file name
+    single = ingest.load_path(corpus / "architecture" / "tracing.md")
+    assert [d.source for d in single] == ["tracing.md"]
+
+
+def test_ingest_records_the_ids_it_produced() -> None:
+    docs = [ingest.IngestDocument(source="a.md", text="x" * 30, title="A")]
+    report = asyncio.run(
+        ingest.ingest_documents(
+            docs,
+            embeddings=FakeEmbeddings(dimensions=2),
+            search_client=FakeSearchClient(),
+            chunk_size=10,
+            overlap=0,
+        )
+    )
+    assert report.chunk_ids == {ingest.chunk_id("a.md", i) for i in range(3)}
+    assert "chunk_ids" not in repr(report)  # never printed
+
+
+def _report(**kwargs: int) -> ingest.IngestReport:
+    report = ingest.IngestReport(**kwargs)
+    report.chunk_ids = {"keep-1", "keep-2"}
+    return report
+
+
+def test_prune_deletes_only_chunks_this_run_did_not_produce() -> None:
+    client = FakeSearchClient(
+        rows=[{ID_FIELD: "keep-1"}, {ID_FIELD: "old-1"}, {ID_FIELD: "keep-2"}, {ID_FIELD: "old-2"}]
+    )
+    report = _report(documents=1, uploaded=2)
+    pruned = asyncio.run(ingest.prune_stale(client, report, apply=True, batch_size=1))
+    assert pruned == 2 and report.stale == 2
+    assert client.search_calls[0]["search_text"] == "*"
+    assert client.search_calls[0]["select"] == [ID_FIELD]
+    assert client.deleted == [[{ID_FIELD: "old-1"}], [{ID_FIELD: "old-2"}]]
+
+
+@pytest.mark.parametrize(
+    "counts",
+    [
+        {"documents": 0, "uploaded": 0},  # wrong path: nothing found
+        {"documents": 3, "uploaded": 0},  # nothing uploaded
+        {"documents": 3, "uploaded": 5, "failed": 1},  # a failed upload
+    ],
+)
+def test_prune_never_runs_after_an_empty_or_failed_ingest(counts: dict[str, int]) -> None:
+    client = FakeSearchClient(rows=[{ID_FIELD: "old-1"}])
+    assert asyncio.run(ingest.prune_stale(client, _report(**counts), apply=True)) == 0
+    assert client.search_calls == [] and client.deleted == []
+
+
+def test_unique_citations_dedupe_by_path_and_fall_back_to_the_file_name() -> None:
+    from app.ai.graph import unique_citations
+
+    chunks = [
+        {"id": "1", "content": "", "source": "a/x.md", "title": "X doc", "score": 1.0},
+        {"id": "2", "content": "", "source": "b/y.md", "title": "", "score": 0.9},
+        {"id": "3", "content": "", "source": "a/x.md", "title": "X doc", "score": 0.8},
+        {"id": "4", "content": "", "source": "", "title": "orphan", "score": 0.7},
+    ]
+    assert unique_citations(chunks) == [
+        {"title": "X doc", "path": "a/x.md"},
+        {"title": "y.md", "path": "b/y.md"},
+    ]
+
+
+def test_ingest_cli_quiets_sdk_request_logging_and_reports_pruned(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import logging
+
+    saved = {n: logging.getLogger(n).level for n in ingest._NOISY_LOGGERS}
+
+    async def fake_run(argv: object) -> ingest.IngestReport:
+        return ingest.IngestReport(documents=1, chunks=2, uploaded=2, pruned=7)
+
+    monkeypatch.setattr(ingest, "run", fake_run)
+    monkeypatch.setattr("sys.argv", ["ingest", str(tmp_path), "--prune"])
+    try:
+        ingest.main()
+        for name in ingest._NOISY_LOGGERS:
+            assert logging.getLogger(name).level == logging.WARNING
+    finally:
+        for name, level in saved.items():
+            logging.getLogger(name).setLevel(level)
+    assert "pruned=7" in capsys.readouterr().out
+
+
+def test_prune_without_apply_is_a_dry_run() -> None:
+    client = FakeSearchClient(rows=[{ID_FIELD: "keep-1"}, {ID_FIELD: "old-1"}, {"no-id": 1}])
+    report = _report(documents=1, uploaded=2)
+    assert asyncio.run(ingest.prune_stale(client, report)) == 0
+    assert report.stale == 1 and client.deleted == []
+
+
+def test_prune_refuses_to_delete_more_than_it_keeps_unless_forced() -> None:
+    rows = [{ID_FIELD: f"old-{i}"} for i in range(3)] + [{ID_FIELD: "keep-1"}]
+    client = FakeSearchClient(rows=rows)
+    report = _report(documents=1, uploaded=2)  # keeps 2, would delete 3
+    with pytest.raises(ingest.PruneRefused, match="--force"):
+        asyncio.run(ingest.prune_stale(client, report, apply=True))
+    assert client.deleted == []
+    assert asyncio.run(ingest.prune_stale(client, report, apply=True, force=True)) == 3
+
+
+def test_prune_reports_an_incomplete_delete() -> None:
+    class HalfFailing(FakeSearchClient):
+        def delete_documents(self, documents: list[dict[str, object]]) -> list[object]:
+            class _R:
+                def __init__(self, ok: bool) -> None:
+                    self.succeeded = ok
+
+            return [_R(i == 0) for i, _ in enumerate(documents)]
+
+    client = HalfFailing(rows=[{ID_FIELD: "old-1"}, {ID_FIELD: "old-2"}])
+    report = _report(documents=1, uploaded=2)
+    assert asyncio.run(ingest.prune_stale(client, report, apply=True)) == 1
+
+
+def _wire_run(monkeypatch: pytest.MonkeyPatch, client: FakeSearchClient) -> None:
+    """Replace every Azure-facing seam `run()` uses with fakes."""
+    from types import SimpleNamespace
+
+    import app.ai.client
+
+    settings = SimpleNamespace(
+        search_index="test-index",
+        search_endpoint="https://search.invalid",
+        embedding_dimensions=2,
+        require_search=lambda: None,
+        require_embeddings=lambda: None,
+    )
+    monkeypatch.setattr(ingest, "get_ai_settings", lambda: settings)
+    monkeypatch.setattr(ingest, "build_index_client", lambda s: object())
+    monkeypatch.setattr(ingest, "ensure_index", lambda client, index: None)
+    monkeypatch.setattr(ingest, "build_search_client", lambda s: client)
+    monkeypatch.setattr(app.ai.client, "get_embeddings", lambda: FakeEmbeddings(dimensions=2))
+
+
+def _corpus(tmp_path: Path) -> Path:
+    corpus = tmp_path / "docs"
+    corpus.mkdir()
+    (corpus / "a.md").write_text("# A\nalpha", "utf-8")
+    return corpus
+
+
+def test_run_never_deletes_without_prune_and_yes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client = FakeSearchClient(rows=[{ID_FIELD: "old-1"}])
+    _wire_run(monkeypatch, client)
+    corpus = _corpus(tmp_path)
+
+    plain = asyncio.run(ingest.run([str(corpus)]))
+    assert plain.uploaded == 1 and client.search_calls == [] and client.deleted == []
+
+    dry = asyncio.run(ingest.run([str(corpus), "--prune"]))
+    assert dry.stale == 1 and dry.pruned == 0 and not dry.prune_applied
+    assert client.deleted == []
+
+    applied = asyncio.run(ingest.run([str(corpus), "--prune", "--yes"]))
+    assert applied.pruned == 1 and applied.prune_applied
+    assert client.deleted == [[{ID_FIELD: "old-1"}]]
+
+
+@pytest.mark.parametrize(
+    "extra", [["--prune"], ["--yes"], ["--force"]], ids=["prune-on-a-file", "yes-alone", "force"]
+)
+def test_run_rejects_unsafe_flag_combinations(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, extra: list[str]
+) -> None:
+    _wire_run(monkeypatch, FakeSearchClient())
+    corpus = _corpus(tmp_path)
+    target = corpus / "a.md" if extra == ["--prune"] else corpus
+    with pytest.raises(SystemExit) as exc:
+        asyncio.run(ingest.run([str(target), *extra]))
+    assert exc.value.code == 2
+
+
+def test_cli_exit_codes_for_refused_and_dry_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    async def refused(argv: object) -> ingest.IngestReport:
+        raise ingest.PruneRefused("refusing to delete 9 chunks while keeping 1 — use --force")
+
+    monkeypatch.setattr(ingest, "run", refused)
+    monkeypatch.setattr("sys.argv", ["ingest", str(tmp_path), "--prune", "--yes"])
+    with pytest.raises(SystemExit) as exc:
+        ingest.main()
+    assert exc.value.code == 2
+    assert "prune refused" in capsys.readouterr().err
+
+    async def dry(argv: object) -> ingest.IngestReport:
+        return ingest.IngestReport(documents=1, chunks=1, uploaded=1, stale=4)
+
+    monkeypatch.setattr(ingest, "run", dry)
+    ingest.main()  # exit 0
+    out = capsys.readouterr().out
+    assert "stale=4 pruned=0" in out and "--prune --yes" in out
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("---\ntitle: x\n# yaml comment\n---\n# Real\n", "Real"),
+        ("    # indented code\n# Heading #\n", "Heading"),
+        ("```\n~~~\n# inside\n```\n# After\n", "After"),
+        ("# " + "x" * 300, "x" * ingest.TITLE_MAX_LENGTH),
+    ],
+    ids=["front-matter", "indented-and-closing-hashes", "mixed-fences", "length-cap"],
+)
+def test_document_title_edge_cases(text: str, expected: str) -> None:
+    assert ingest.document_title(text, "fallback.md") == expected

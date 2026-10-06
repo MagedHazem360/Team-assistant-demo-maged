@@ -21,11 +21,12 @@ Adapted from ``alembic init -t async`` (Alembic 1.20):
 from __future__ import annotations
 
 import asyncio
+import logging
 from logging.config import fileConfig
 
 from alembic import context
 from sqlalchemy import pool
-from sqlalchemy.engine import Connection
+from sqlalchemy.engine import Connection, make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
 import app.models  # noqa: F401  — registers models on Base.metadata
@@ -80,7 +81,11 @@ def do_run_migrations(connection: Connection) -> None:
 
 async def run_async_migrations() -> None:
     """Connect with a throw-away engine (NullPool) and run the migrations."""
-    connectable = create_async_engine(_database_url(), poolclass=pool.NullPool)
+    url = _database_url()
+    # The URL may come from apps/api/.env without an explicit export: say which server this
+    # command is about to touch — the host only, never the URL (rule 50).
+    logging.getLogger("alembic.env").info("target database host: %s", make_url(url).host)
+    connectable = create_async_engine(url, poolclass=pool.NullPool)
 
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)

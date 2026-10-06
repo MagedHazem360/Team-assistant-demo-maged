@@ -93,7 +93,7 @@ These orient you fast; they are **not** the one-and-only place — read/search t
 12. **Clean up** temp files, scratch scripts, and debug logging before finishing.
 13. **Changelog** user-facing changes (per-service `CHANGELOG.md`, if present), following its format.
 14. **Keep orientation/context files in sync.** The Repo map (this file), per-app `CLAUDE.md`, `README.md`, `.env.example`s, and `docs/` are the **initial source of truth** — but **not the only place** (it's normal to read/search the code; if a doc disagrees with the code, the code wins — then fix the doc). Any change to architecture / layout / commands / env / ports / the trace-observability contract / the HTTP surface updates the affected file(s) in the same task.
-15. **Versioning — SemVer, per service.** `apps/web` and `apps/api` version independently (currently `apps/web` `0.1.0`, `apps/api` `0.4.1` — pre-1.0); the root is the tooling wrapper, not a release unit. Bump from the **consumer's** perspective: MAJOR = breaking (removed/renamed endpoint/field, changed shape, broken trace/observability contract); MINOR = backward-compatible feature; PATCH = fix. Ask if unsure.
+15. **Versioning — SemVer, per service.** `apps/web` and `apps/api` version independently (currently `apps/web` `0.1.0`, `apps/api` `0.5.0` — pre-1.0); the root is the tooling wrapper, not a release unit. Bump from the **consumer's** perspective: MAJOR = breaking (removed/renamed endpoint/field, changed shape, broken trace/observability contract); MINOR = backward-compatible feature; PATCH = fix. Ask if unsure.
 
 ## Definition of Done
 

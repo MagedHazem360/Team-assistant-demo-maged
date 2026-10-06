@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
+from pathlib import PurePosixPath
 from typing import Annotated, Any, TypedDict
 
 from langchain_core.language_models import BaseChatModel
@@ -125,13 +126,35 @@ def build_graph(
     return graph.compile()
 
 
+class Citation(TypedDict):
+    """One cited document (ADR-0015) — the shape stored in ``messages.citations``."""
+
+    title: str
+    path: str
+
+
 @dataclass
 class Answer:
     text: str
     sources: list[str] = field(default_factory=list)
+    citations: list[Citation] = field(default_factory=list)
     context: list[RetrievedChunk] = field(default_factory=list)
     input_tokens: int | None = None
     output_tokens: int | None = None
+
+
+def unique_citations(chunks: list[RetrievedChunk]) -> list[Citation]:
+    """One citation per document, in retrieval order. A chunk ingested before titles existed
+    falls back to its file name."""
+    citations: list[Citation] = []
+    seen: set[str] = set()
+    for c in chunks:
+        path = c.get("source") or ""
+        if not path or path in seen:
+            continue
+        seen.add(path)
+        citations.append({"title": c.get("title") or PurePosixPath(path).name, "path": path})
+    return citations
 
 
 def unique_sources(chunks: list[RetrievedChunk]) -> list[str]:
@@ -163,6 +186,7 @@ async def ask(
     return Answer(
         text=text,
         sources=unique_sources(context),
+        citations=unique_citations(context),
         context=context,
         input_tokens=input_tokens,
         output_tokens=output_tokens,

@@ -95,8 +95,14 @@ graph still answers, with an empty context.
 `content`, `source`, `chunk_index`, `content_vector` with an HNSW profile sized by
 `AZURE_AI_EMBEDDING_DIMENSIONS`) so the retriever and the index cannot drift. `ensure_index` is
 idempotent; `ingest_documents` chunks (fixed windows with overlap), embeds in batches and
-uploads with stable ids (re-ingesting a source overwrites its chunks). Run it from `apps/api`:
-`uv run python -m app.ai.ingest ./docs`. The identity needs _Search Index Data Contributor_ +
+uploads with stable ids (re-ingesting a source overwrites its chunks). Each chunk carries `title`
+(the first `# ` heading, else the file name) and `source`, the path relative to the ingested
+folder, so citations read `architecture/tracing.md` wherever the job runs (ADR-0015). Run it from
+`apps/api`: `uv run python -m app.ai.ingest ../../docs --prune` reports the chunks this run did
+not produce (deleted or renamed documents); add `--yes` to delete them. Pruning needs the corpus
+folder, never runs after a failed or empty ingest, and refuses to delete more than it keeps
+without `--force` — it assumes the index holds this corpus only. The retriever selects `title`, so
+run the ingest before deploying an api that reads it to an index created earlier. The identity needs _Search Index Data Contributor_ +
 _Search Service Contributor_ (granted to the api identity by the `ai-search` module; a dev key
 works locally).
 

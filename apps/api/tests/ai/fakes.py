@@ -56,12 +56,13 @@ class FakeRetriever:
 
 
 class FakeSearchClient:
-    """Records ``search``/``upload_documents`` calls; returns canned rows."""
+    """Records ``search``/``upload_documents``/``delete_documents`` calls; returns canned rows."""
 
     def __init__(self, rows: list[dict[str, Any]] | None = None) -> None:
         self.rows = rows or []
         self.search_calls: list[dict[str, Any]] = []
         self.uploaded: list[list[dict[str, Any]]] = []
+        self.deleted: list[list[dict[str, Any]]] = []
 
     def search(self, **kwargs: Any) -> list[dict[str, Any]]:
         self.search_calls.append(kwargs)
@@ -69,6 +70,14 @@ class FakeSearchClient:
 
     def upload_documents(self, documents: list[dict[str, Any]]) -> list[Any]:
         self.uploaded.append(list(documents))
+
+        class _Result:
+            succeeded = True
+
+        return [_Result() for _ in documents]
+
+    def delete_documents(self, documents: list[dict[str, Any]]) -> list[Any]:
+        self.deleted.append(list(documents))
 
         class _Result:
             succeeded = True

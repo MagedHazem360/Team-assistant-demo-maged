@@ -71,7 +71,7 @@ deployed), Azure AI Search retrieval, the allow-listed read-only `query_external
 prompt files, content-free `gen_ai` telemetry, and the ingestion job:
 
 ```bash
-uv run python -m app.ai.ingest ./docs   # chunk → embed → upload; needs AZURE_SEARCH_* + AZURE_AI_EMBEDDING_*
+uv run python -m app.ai.ingest ../../docs --prune --yes   # chunk → embed → upload, drop stale chunks; reads .env
 uv run pytest tests/ai tests/evals      # offline: fakes for the model, retriever, search client, DB
 ```
 

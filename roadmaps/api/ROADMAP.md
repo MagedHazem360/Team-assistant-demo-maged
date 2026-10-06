@@ -61,19 +61,28 @@ The dev database, Foundry and AI Search are pre-created (B6), so nothing here wa
 
 ### 2.1 — Citation titles and corpus-relative paths in the index (ADR-0015)
 
-- **status:** todo
+- **status:** done
 - **depends_on:** []
 - **layers:** [ai]
 - **acceptance:**
   - the index definition (`ingest.build_index`) gains a `title` field; each document's title is its first `# ` heading, else its file name; `ensure_index` adds the field to an existing `team-assistant-docs` index without recreating it
   - ingestion stores `source` relative to the ingested folder, POSIX separators (`uv run python -m app.ai.ingest ../../docs` stores `architecture/tracing.md`, never `../../docs/…`)
   - the retriever returns `title` with each chunk; a citation helper returns unique `[{ "title", "path" }]` in retrieval order
+  - `--prune`: reports the chunks in the index this run did not produce (`stale=`); deletes them only with `--yes`; needs the corpus folder (not a file); never prunes after a failed or empty upload; refuses (exit 2) to delete more than it keeps unless `--force`; logs the target search host + index before writing
+  - the ingest CLI logs only its own counts — the Azure SDK / HTTP request logging is quieted to warnings
   - ingestion and retrieval telemetry stay counts and durations only — no titles, paths or content
 - **how_to_test:**
+  - `uv run --directory apps/api pytest tests/ai -q` → green (titles and edge cases, corpus-relative paths, citations, prune: dry run / `--yes` / refusal / `--force` / incomplete delete, `run()` never deletes without `--prune --yes`, unsafe flag combinations rejected)
+  - `just test` → web 136, api 237 passed
+  - live (from `apps/api`): `uv run python -m app.ai.ingest ../../docs --prune` → `documents=53 chunks=583 uploaded=583 failed=0 stale=582 pruned=0` + a dry-run hint; then `… --prune --yes` → `stale=0 pruned=0` (the first `--yes` run deletes the 582 old `../../docs/…` chunks)
 - **needs_human:**
-  - run the ingestion once against the dev index: from `apps/api`, `uv run python -m app.ai.ingest ../../docs` (re-run whenever `docs/` changes)
+  - run the ingestion with pruning against the dev index (see `how_to_test` → live): a dry run, then `--prune --yes` to delete the 582 pre-2.1 `../../docs/…` chunks; re-run `--prune --yes` whenever `docs/` changes
 - **notes:**
   - 2026-10-06 — planned by `/plan-roadmap api`
+  - 2026-10-06 — pre-2.1 test ingest by Maged Hazem: 53 documents, 582 chunks, 0 failed (index created; search returns relevant hits). Sources are stored as `../../docs/…` — clear the index before the post-2.1 ingest
+  - 2026-10-06 — scope: `--prune` added (replaces deleting the index by hand; also removes chunks of deleted/renamed docs). Started by Claude
+  - 2026-10-06 — implemented; awaiting test by Maged Hazem. Files: `app/ai/ingest.py`, `app/ai/tools/retrieve.py`, `app/ai/graph.py`, `alembic/env.py` (logs the target host), tests (`tests/ai/fakes.py`, `test_ai_tools_retrieval_ingest.py`, `test_alembic.py`), api 0.5.0 (CHANGELOG, pyproject, uv.lock), docs (`ai.md`, ARCHITECTURE B2, api README/CLAUDE.md, rule 70, feature-scaffold). Reviews: code-reviewer + security-reviewer — HIGH on unguarded `--prune` fixed (dry run by default, `--yes`, `--force`, folder-only, target logged); deploy-order note added (ingest before rolling out 0.5.0). Carried to web 2.2: render citation titles/paths as plain text, never HTML or links
+  - 2026-10-06 — confirmed by Maged Hazem: live ingest with `--prune` (dry run, then `--yes`) on the dev index; the pre-2.1 `../../docs/…` chunks are gone
 
 ### 2.2 — Ask a question in a conversation (JSON)
 

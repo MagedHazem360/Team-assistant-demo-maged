@@ -7,6 +7,35 @@ The two services version independently.
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-10-06
+
+### Added
+
+- **Citation titles** (roadmap api 2.1, ADR-0015): the search index gains a searchable `title`
+  field — a document's first `# ` heading (code fences skipped), else its file name. The
+  retriever returns it; `graph.unique_citations()` turns retrieved chunks into unique
+  `[{title, path}]` (also on `Answer.citations`). Adding the field to an existing index is
+  non-breaking; chunks ingested earlier read as their file name until re-ingested.
+- **`--prune`** on `python -m app.ai.ingest` finds every chunk in the index that the run did not
+  produce (deleted or renamed documents, older path formats) and prints `stale=`. It is a **dry
+  run** unless `--yes` is added; it needs the corpus folder (not a file), never runs after a failed
+  or empty upload, and refuses (exit 2) to delete more chunks than the run keeps unless `--force`.
+  The run logs its target (search host + index) before writing; an incomplete delete exits 1.
+- `alembic` logs the target database **host** (never the URL) before connecting, since the URL may
+  now come from `apps/api/.env`.
+
+### Changed
+
+- Ingestion stores `source` **relative to the ingested folder** with POSIX separators
+  (`architecture/tracing.md`, not `../../docs/architecture/tracing.md`), so chunk ids no longer
+  depend on where the job runs. Existing chunks get new ids on the next ingest — run it with
+  `--prune --yes` once to remove the old ones (add `--force` if the dry run shows more stale chunks
+  than kept).
+- **Deploy order:** the retriever now selects `title`, which an index created before 0.5.0 lacks
+  (Azure Search answers 400). Run the ingest (it adds the field) **before** rolling out 0.5.0.
+- The ingest CLI quiets Azure SDK / httpx / openai request logging to warnings; only its own
+  counts print.
+
 ## [0.4.1] — 2026-10-06
 
 ### Fixed

@@ -150,3 +150,9 @@ def test_env_py_keeps_a_database_url_set_in_the_shell(
     command.upgrade(_config(io.StringIO()), "head", sql=True)
 
     assert app.config.get_settings().database_url == TEST_URL
+
+
+def test_env_py_names_the_target_host_but_never_the_url() -> None:
+    source = ENV_PY.read_text(encoding="utf-8")
+    assert '"target database host: %s", make_url(url).host' in source
+    assert "info(url" not in source and '"%s", url)' not in source

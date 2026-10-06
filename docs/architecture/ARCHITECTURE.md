@@ -229,7 +229,8 @@ stored in Azure SQL; the corpus is the repo's `docs/**/*.md`, indexed in Azure A
 | F3  | Knowledge base       | As an admin I re-index the corpus from the app (`POST /v1/admin/ingest`).                                 | ai, endpoint                        | 2     |
 
 Phase 1 indexes the corpus with the existing CLI, run by a developer from `apps/api`:
-`uv run python -m app.ai.ingest ../../docs` (re-run after the docs change).
+`uv run python -m app.ai.ingest ../../docs --prune --yes` (re-run after the docs change; `--prune`
+drops chunks of deleted or renamed docs — a dry run without `--yes`).
 
 ### B3. AI components
 
