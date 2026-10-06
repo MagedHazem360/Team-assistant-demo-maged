@@ -7,6 +7,22 @@ The two services version independently.
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-10-06
+
+### Added
+
+- **`/v1/conversations`** (roadmap api 1.2, `ARCHITECTURE.md` B4a): `POST` starts a conversation
+  (`201`; optional `title` ≤ 200, missing or blank → "New conversation"), `GET` lists them newest
+  first (`limit` 1–100, default 50; `{items, count}`), `GET /{id}` returns one with its messages
+  oldest first and `citations` as `[{title, path}]` (`404 not_found` for an unknown id).
+  Timestamps are UTC (`…Z`). Conversations are shared — no owner until auth (ADR-0013).
+- `app/repositories/conversations.py` — the queries (ORM only), kept out of the router.
+- Titles are trimmed, then bounded at 200 **UTF-16 units** (as `nvarchar(200)` counts them), so an
+  over-long or emoji-heavy title is a `422`, never a truncation error. A stored `citations` value
+  that is valid JSON but not `[{title, path}]` reads as `null` for that message (logged, no
+  content) instead of a `500` for the whole conversation. `role` is typed `"user" | "assistant"`.
+- `docs/reference/openapi.json` and the web's generated `api-types.ts` include the new routes.
+
 ## [0.5.0] — 2026-10-06
 
 ### Added

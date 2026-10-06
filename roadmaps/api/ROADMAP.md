@@ -43,7 +43,7 @@ The dev database, Foundry and AI Search are pre-created (B6), so nothing here wa
 
 ### 1.2 — Conversations endpoints: create, list, get
 
-- **status:** todo
+- **status:** done
 - **depends_on:** [1.1]
 - **layers:** [endpoint]
 - **acceptance:**
@@ -53,9 +53,22 @@ The dev database, Foundry and AI Search are pre-created (B6), so nothing here wa
   - every response echoes `x-trace-id`; errors use `{ "error": code, "trace_id": id }`; message content and titles never appear in logs, spans or metric attributes
   - `docs/reference/openapi.json` and `docs/reference/http-api.md` list the three routes
 - **how_to_test:**
+  - `uv run --directory apps/api pytest tests/test_conversations.py -q` → 28 passed (shapes, validation incl. trimmed/UTF-16 title bounds, limit 1–100, 404/422 contract, `x-trace-id`, malformed stored citations → `null`, a failing repository is a 500 that leaks no user text, compiled T-SQL `TOP`/`ORDER BY`)
+  - `just test` → web 136, api 265 passed
+  - live, against the dev database — terminal 1, from `apps/api`: `uv run uvicorn app.main:app --port 8000` (the first request after a pause may take ~30 s while the serverless DB wakes)
+  - terminal 2 (PowerShell): `curl.exe -s -X POST localhost:8000/v1/conversations -H "content-type: application/json" -d "{}"` → `{"id":"…","title":"New conversation","created_at":"…Z","updated_at":"…Z"}`
+  - `curl.exe -s "localhost:8000/v1/conversations?limit=5"` → `{"items":[{…the one above…}],"count":1}`
+  - `curl.exe -s localhost:8000/v1/conversations/<id from the POST>` → the conversation with `"messages":[]`
+  - `curl.exe -s -i localhost:8000/v1/conversations/00000000-0000-0000-0000-000000000000` → `404`, body `{"error":"not_found","trace_id":"…"}`, same `x-trace-id` header
+  - `curl.exe -s "localhost:8000/v1/conversations?limit=0"` → `{"error":"validation_error",…}`
 - **needs_human:**
+  - run the live smoke above against the dev database (it creates a test conversation; deleting is out of scope, so it stays)
 - **notes:**
   - 2026-10-06 — planned by `/plan-roadmap api`; tests run against a fake session — the live check needs 1.1 applied
+  - 2026-10-06 — started by Claude (branch `feat/api-1.2-conversation-endpoints`, stacked on api 2.1 until the open PRs merge)
+  - 2026-10-06 — implemented; awaiting test by Maged Hazem. Files: `app/routers/conversations.py`, `app/repositories/{__init__,conversations}.py` (new), `app/routers/v1.py`, `tests/test_conversations.py` (new), generated `docs/reference/openapi.json` + `apps/web/src/lib/api-types.ts`, `docs/reference/http-api.md`, `apps/api/CLAUDE.md`, api 0.6.0 (CHANGELOG, pyproject, uv.lock, root CLAUDE.md). Reviews: code-reviewer + security-reviewer — nothing blocking; fixed: malformed stored citations → `null` (was a whole-thread 500), title bounded after trimming in UTF-16 units (emoji would have been a 500), `role` typed, tests on real ORM objects + failure-path log-leak test
+  - 2026-10-06 — carried forward from the reviews: (api 2.2) validate citations with the `Citation` model before insert; cap message/question length on write; user + assistant rows written in one request can share a `datetime2(3)` millisecond — keep the thread ordered (insertion order or sequential ids); consider paging `GET /{id}` messages. (web 1.1/BFF) cap request bodies, validate `{id}` as a UUID before forwarding, never forward arbitrary query strings; rate-limit at the BFF/ingress before anything beyond internal use (create spam pushes real conversations out of the 100-row list). (web 2.x) render titles/paths as plain text; show a "don't paste personal data" notice. (deployment) a serverless-DB cold start surfaces as `500 internal_error` — consider mapping DB timeouts to `503`. (follow-up) `create_app()` still reports OpenAPI/`/info` version `0.0.0` (template leftover, `app/main.py:77`)
+  - 2026-10-06 — confirmed by Maged Hazem (offline tests + live smoke against the dev database)
 
 ## Phase 2 — Answers with citations
 

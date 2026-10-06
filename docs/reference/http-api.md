@@ -13,15 +13,17 @@ removed in [ADR-0003](../adr/0003-remove-nestjs-api-layer.md).
 
 ## Route map
 
-| Method | Path                | Service          | Purpose                                                         | Versioned?       |
-| ------ | ------------------- | ---------------- | --------------------------------------------------------------- | ---------------- |
-| GET    | `/ping`             | `apps/api`       | Liveness greeting                                               | No (operational) |
-| GET    | `/info`             | `apps/api`       | Status/version/runtime report                                   | No (operational) |
-| GET    | `/health`           | `apps/api`       | Health + observability state                                    | No (operational) |
-| GET    | `/v1/*`             | `apps/api`       | Mandatory business router — **empty**, no routes registered yet | Yes (`/v1`)      |
-| GET    | `/api/ping-backend` | `apps/web` (BFF) | Proxies `apps/api` `/ping`                                      | No (demo route)  |
-| GET    | `/api/info-backend` | `apps/web` (BFF) | Proxies `apps/api` `/info`                                      | No (demo route)  |
-| GET    | `/health`           | `apps/web` (BFF) | Own health + observability state (no upstream call)             | No (operational) |
+| Method | Path                     | Service          | Purpose                                             | Versioned?       |
+| ------ | ------------------------ | ---------------- | --------------------------------------------------- | ---------------- |
+| GET    | `/ping`                  | `apps/api`       | Liveness greeting                                   | No (operational) |
+| GET    | `/info`                  | `apps/api`       | Status/version/runtime report                       | No (operational) |
+| GET    | `/health`                | `apps/api`       | Health + observability state                        | No (operational) |
+| POST   | `/v1/conversations`      | `apps/api`       | Start a conversation                                | Yes (`/v1`)      |
+| GET    | `/v1/conversations`      | `apps/api`       | List conversations, newest first                    | Yes (`/v1`)      |
+| GET    | `/v1/conversations/{id}` | `apps/api`       | A conversation with its messages                    | Yes (`/v1`)      |
+| GET    | `/api/ping-backend`      | `apps/web` (BFF) | Proxies `apps/api` `/ping`                          | No (demo route)  |
+| GET    | `/api/info-backend`      | `apps/web` (BFF) | Proxies `apps/api` `/info`                          | No (demo route)  |
+| GET    | `/health`                | `apps/web` (BFF) | Own health + observability state (no upstream call) | No (operational) |
 
 Business endpoints, when they arrive, are `/v1/<feature>` on the api (routers attached to
 `v1_router`) and `/api/v1/<feature>` on web (folder-enforced). See [Versioning](#versioning).
@@ -104,6 +106,28 @@ Field notes (`apps/api/app/routes.py`):
 state, not database health. **The database is never queried here**: the SQLAlchemy engine is
 lazy and the baseline issues no queries, so `/health` is green with the placeholder
 `DATABASE_URL`.
+
+### `/v1/conversations` — chat history (roadmap api 1.2)
+
+Conversations are **shared** — there is no owner until auth lands (ADR-0013). Timestamps are
+UTC (`…Z`). Errors use the contract below. Titles and message content are returned, never logged.
+Titles are trimmed and bounded at 200 UTF-16 units (an emoji counts 2). A stored citation that is
+not `[{title, path}]` reads as `null` for that message.
+
+| Request                                                                                          | Success                                                                                                                                                                                                   | Errors                                |
+| ------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| `POST /v1/conversations` `{ "title"?: string }` (≤ 200; missing or blank → `"New conversation"`) | `201 { id, title, created_at, updated_at }`                                                                                                                                                               | `422 validation_error`                |
+| `GET /v1/conversations?limit=50` (1–100)                                                         | `200 { items: [{ id, title, updated_at }], count }` — newest `updated_at` first; `count` = items returned                                                                                                 | `422 validation_error`                |
+| `GET /v1/conversations/{id}`                                                                     | `200 { id, title, created_at, updated_at, messages: [{ id, role, content, citations, created_at }] }` — messages oldest first; `citations` is `[{ title, path }]` on assistant messages, `null` otherwise | `404 not_found`, `422` (malformed id) |
+
+```bash
+curl -s -X POST localhost:8000/v1/conversations -H "content-type: application/json" -d "{}"
+# → 201 {"id":"…","title":"New conversation","created_at":"…Z","updated_at":"…Z"}
+curl -s "localhost:8000/v1/conversations?limit=5"
+```
+
+Asking questions in a conversation (`…/{id}/ask`, `…/{id}/ask/stream`) arrives with roadmap api
+2.2/2.3.
 
 ---
 
