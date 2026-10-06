@@ -7,6 +7,33 @@ The two services version independently.
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-10-06
+
+### Added
+
+- **Ask routes** (roadmap web 1.2): `POST /api/v1/conversations/{id}/ask` (JSON, 120 s bound) and
+  `POST /api/v1/conversations/{id}/ask/stream` (SSE pass-through, frames unchanged). Only
+  `{question}` is forwarded; the id is UUID-checked; bodies are capped at 32 KB. An api error
+  before the stream starts (`404`/`413`/`422`/`503`) passes through as its JSON with its status;
+  an unreachable api is `502 upstream_unreachable`.
+- Mock fixtures: a full streamed answer, a mid-stream `error` frame (`[mock:error]` in the
+  question) and a `503` before the first frame (`[mock:503]`).
+- `createConversation()` in `src/lib/chat-client.ts`; `ChatPanel` creates a conversation on the
+  first question and continues it (optional `conversationId` / `onConversation`).
+
+### Changed
+
+- **Citations follow ADR-0015:** `chat-client` reads `sources`/`done` as `[{title, path}]` and an
+  `error` frame as `{error}`; errors reach the UI as `{code, traceId}` (the api's code, the
+  `x-trace-id`) and render as `error: <code> · trace_id: <id>`. `ChatMessage.sources` →
+  `citations`; citations render as `[n] title — path`, plain text only (never markup or links).
+- The `/chat` page uses the conversation routes and shows a "don't paste personal data" notice.
+
+### Removed
+
+- The template's example routes `/api/v1/assistant/ask[/stream]`, their test and
+  `src/mocks/assistant.ts` (they pointed at api routes that never existed; B8 #8).
+
 ## [0.2.0] — 2026-10-06
 
 ### Added

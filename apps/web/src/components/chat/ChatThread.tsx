@@ -33,18 +33,23 @@ export function ChatThread({ messages }: Readonly<{ messages: ChatMessage[] }>) 
             </span>
           )}
           {m.error && (
-            <span role="alert" className="mt-2 block text-xs text-red-600">
-              Something went wrong ({m.error}). Try again.
+            <span role="alert" className="mt-2 block font-mono text-xs text-red-600">
+              error: {m.error.code}
+              {m.error.traceId ? ` · trace_id: ${m.error.traceId}` : ''}
             </span>
           )}
-          {m.sources && m.sources.length > 0 && (
-            <ul className="mt-2 flex flex-wrap gap-1" aria-label="Sources">
-              {m.sources.map((s, i) => (
+          {m.citations && m.citations.length > 0 && (
+            <ul className="mt-2 flex flex-col gap-1" aria-label="Sources">
+              {/* Plain text only — titles and paths come from the docs and are never markup or links. */}
+              {m.citations.map((c, i) => (
                 <li
-                  key={s}
-                  className="rounded-md bg-neutral-100 px-2 py-0.5 text-xs text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300"
+                  key={c.path}
+                  className="flex justify-between gap-3 rounded-md bg-neutral-100 px-2 py-0.5 text-xs text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300"
                 >
-                  [{i + 1}] {s}
+                  <span>
+                    [{i + 1}] {c.title}
+                  </span>
+                  <span className="font-mono text-neutral-500">{c.path}</span>
                 </li>
               ))}
             </ul>

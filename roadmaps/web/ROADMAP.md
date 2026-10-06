@@ -35,7 +35,7 @@ these items adapt them; they do not start from scratch.
 
 ### 1.2 — Ask routes for a conversation (JSON + SSE), replacing the template's `assistant` routes
 
-- **status:** todo
+- **status:** done
 - **depends_on:** [api:2.3, 1.1]
 - **layers:** [bff]
 - **acceptance:**
@@ -45,9 +45,17 @@ these items adapt them; they do not start from scratch.
   - `MOCK_UPSTREAM=true` stream fixtures: a full answer (`sources → token* → done`), a mid-stream `error` (`ai_unavailable`), and a `503` before the first frame
   - works against `MOCK_UPSTREAM=true` fixtures until api:2.3 is live
 - **how_to_test:**
+  - `pnpm -C apps/web exec vitest run src/app/api/v1/conversations src/lib/chat-client.test.ts src/components/chat` → green (both routes in both modes, validation/413/UUID, api errors passed through, 502, frames unchanged, `[{title, path}]` parsing, `{code, traceId}` errors, plain-text citations, ChatPanel creates then continues a conversation)
+  - `just test` → web 177, api 297 passed
+  - live — terminal 1 (`apps/api`): `uv run uvicorn app.main:app --port 8000`; terminal 2 (`apps/web`): `pnpm dev`; browser: http://localhost:3000/chat → ask "How does trace_id propagation work?" → the answer streams in, then Sources lists `[1] The `trace_id` contract — architecture/tracing.md` …; a follow-up answers in context
+  - mock mode (`$env:MOCK_UPSTREAM='true'; pnpm dev`, no api): a normal question streams the fixture; a question containing `[mock:error]` ends with a red `error: ai_unavailable · trace_id: …`; `[mock:503]` shows the same before any text
 - **needs_human:**
+  - the live check above
 - **notes:**
   - 2026-10-06 — planned by `/plan-roadmap web`; the `sources` shape change is ADR-0015's cross-service change (api:2.3 on the other side)
+  - 2026-10-06 — started by Claude (branch `feat/web-1.2-ask-routes`); scope note: keeps `/chat` working on the new routes (ChatPanel creates a conversation on first send; sources render as title → path, plain text) — the page itself is web 2.1/2.2
+  - 2026-10-06 — implemented; awaiting test by Maged Hazem. Files: `src/app/api/v1/conversations/[id]/ask/route.ts`, `ask/stream/route.ts`, `ask/routes.test.ts` (new), `src/lib/conversations.ts` (`readQuestion`, `ASK_TIMEOUT_MS`, `MAX_ASK_BODY_BYTES`), `src/mocks/conversations.ts` (ask fixtures + scenarios), `src/lib/chat-client.ts` (+ test), `src/components/chat/{ChatPanel,ChatThread,types}.tsx` (+ tests), `src/app/chat/page.tsx`; removed the `assistant` routes/test/fixture; docs (`apps/web/CLAUDE.md`, `src/mocks/README.md`, `docs/architecture/ai.md`, `docs/reference/http-api.md`), web 0.3.0. Agent reviews unavailable (usage limit); manual — BFF boundary intact, `streamUpstream`/`fetchUpstream` only, route-class metrics, error kind only in logs, citations rendered as text (tested against an `<img>`/`javascript:` payload)
+  - 2026-10-06 — confirmed by Maged Hazem (live in the browser at /chat: streamed answers with citations, follow-ups in context)
 
 ## Phase 2 — The `/chat` page
 

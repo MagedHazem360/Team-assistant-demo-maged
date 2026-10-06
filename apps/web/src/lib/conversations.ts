@@ -19,6 +19,27 @@ export const CONVERSATIONS_TIMEOUT_MS = 35_000;
 /** Bodies larger than this are refused before they are read into memory (create: `{title}`). */
 export const MAX_BODY_BYTES = 4_096;
 
+/**
+ * Ask routes (roadmap web 1.2): a model answer is bounded at 60 s by the api, plus retrieval and
+ * a possible database wake-up — the BFF waits longer than the api so the api's own 503 arrives.
+ */
+export const ASK_TIMEOUT_MS = 120_000;
+
+/** `{ question }` bodies: 4,000 characters is at most ~16 KB of UTF-8; leave headroom for JSON. */
+export const MAX_ASK_BODY_BYTES = 32_768;
+
+/**
+ * The question from an ask body: a trimmed, non-empty string, or `undefined` when the body is
+ * not `{ question: string }`. Length is the api's rule (`413 payload_too_large` over 4,000).
+ */
+export async function readQuestion(req: Request): Promise<string | undefined> {
+  const body = await readBoundedJson(req, MAX_ASK_BODY_BYTES);
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return undefined;
+  const question = (body as { question?: unknown }).question;
+  if (typeof question !== 'string' || !question.trim()) return undefined;
+  return question.trim();
+}
+
 export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** The api error contract shape, minted at the BFF for requests it refuses itself. */
@@ -36,11 +57,11 @@ export function apiBase(): string {
  */
 export class BodyTooLarge extends Error {}
 
-export async function readBoundedJson(req: Request): Promise<unknown> {
+export async function readBoundedJson(req: Request, maxBytes = MAX_BODY_BYTES): Promise<unknown> {
   const declared = Number(req.headers.get('content-length') ?? '0');
-  if (declared > MAX_BODY_BYTES) throw new BodyTooLarge();
+  if (declared > maxBytes) throw new BodyTooLarge();
   const text = await req.text();
-  if (new TextEncoder().encode(text).length > MAX_BODY_BYTES) throw new BodyTooLarge();
+  if (new TextEncoder().encode(text).length > maxBytes) throw new BodyTooLarge();
   if (!text.trim()) return undefined;
   try {
     return JSON.parse(text);

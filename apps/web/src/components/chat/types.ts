@@ -1,13 +1,15 @@
+import type { ChatError, Citation } from '@/lib/chat-client';
+
 export type ChatRole = 'user' | 'assistant';
 
 export interface ChatMessage {
   id: string;
   role: ChatRole;
   text: string;
-  /** Sources the assistant cited (unique, in citation order). */
-  sources?: string[];
+  /** Documents the assistant cited, in marker order: `[n]` is `citations[n-1]` (ADR-0015). */
+  citations?: Citation[];
   /** Still streaming. */
   pending?: boolean;
-  /** Bounded error kind from the stream (never raw exception text). */
-  error?: string;
+  /** A bounded error code plus the trace id (never raw exception text). */
+  error?: ChatError;
 }

@@ -1,18 +1,19 @@
 import { ChatPanel } from '@/components/chat/ChatPanel';
 
 /**
- * Example chat page on the UI foundation (ADR-0010). It talks only to the same-origin BFF
- * route `/api/v1/assistant/ask/stream`; with `MOCK_UPSTREAM=true` that route streams the
- * fixture in `src/mocks/assistant.ts`, otherwise it proxies the api's `/v1/assistant/ask/stream`
- * (which a project adds on `app/ai/` — the template ships none).
+ * The chat page. It talks only to the same-origin BFF: the first question creates a
+ * conversation (`/api/v1/conversations`), then answers stream from
+ * `/api/v1/conversations/{id}/ask/stream` with their citations. With `MOCK_UPSTREAM=true` those
+ * routes serve the fixtures in `src/mocks/conversations.ts`. The conversation list and the
+ * two-column layout arrive with roadmap web 2.1/2.2.
  */
 export default function ChatPage() {
   return (
     <main className="px-4 py-8">
-      <ChatPanel endpoint="/api/v1/assistant/ask/stream" title="Assistant (example)" />
+      <ChatPanel title="Team Assistant" />
       <p className="mx-auto mt-4 max-w-3xl text-xs text-neutral-500">
-        Set <code>MOCK_UPSTREAM=true</code> in <code>apps/web/.env.local</code> to try this page
-        before the api route exists.
+        Answers come from the team&apos;s documents. Conversations are visible to everyone using
+        this app — don&apos;t paste personal or confidential data.
       </p>
     </main>
   );

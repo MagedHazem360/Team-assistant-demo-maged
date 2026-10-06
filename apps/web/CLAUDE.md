@@ -29,9 +29,13 @@ URL.
   the chat-history BFF (roadmap web 1.1): proxy `${API_BASE_URL}/v1/conversations…` via
   `src/lib/conversations.ts` (`proxyJson`, 35 s bound for the serverless DB, body cap 4 KB, UUID-checked
   `{id}`, only `title`/`limit` forwarded) or serve `src/mocks/conversations.ts` with `MOCK_UPSTREAM=true`.
-- `src/app/api/v1/assistant/ask/route.ts` + `ask/stream/route.ts` — **example business routes**
-  (JSON + SSE) that proxy `${API_BASE_URL}/v1/assistant/…` or, with `MOCK_UPSTREAM=true`, serve
-  `src/mocks/assistant.ts`. `src/app/chat/page.tsx` — the example chat page on them.
+- `src/app/api/v1/conversations/[id]/ask/route.ts` (JSON) + `ask/stream/route.ts` (SSE pass-through,
+  frames unchanged — ADR-0015 shapes) — ask in a conversation (roadmap web 1.2): only `{question}`
+  forwarded, UUID-checked id, 32 KB body cap, 120 s JSON bound / 5 min stream bound; an api error
+  before the stream (404/413/422/503) passes through as its JSON; mock scenarios by marker in the
+  question (`[mock:error]` mid-stream error, `[mock:503]` 503 before the first frame).
+  `src/lib/chat-client.ts` (`createConversation`, `askStream` → `{code, traceId}` errors) and
+  `src/app/chat/page.tsx` — the chat page: `ChatPanel` creates a conversation on the first question.
 - `src/components/chat/` — `ChatThread`, `MessageInput`, `ChatPanel` (Tailwind, RTL-tested).
 - `src/lib/stream.ts` (`streamUpstream`/`proxyStream`), `src/lib/sse.ts` (frame parser/builder),
   `src/lib/chat-client.ts` (`askStream`, browser → BFF), `src/lib/mocks.ts`
@@ -82,7 +86,7 @@ URL.
 - **Working ahead of the api:** `MOCK_UPSTREAM=true` in `.env.local` makes a route serve its
   `src/mocks/<feature>.ts` fixture (`isMockUpstream()` / `mockJson` / `mockSse` in
   `src/lib/mocks.ts`); fixtures are typed against `src/lib/api-types.ts` (generated — `make
-openapi`). Example: `/api/v1/assistant/ask[/stream]` + the `/chat` page.
+openapi`). Example: `/api/v1/conversations/{id}/ask[/stream]` + the `/chat` page.
 - **UI (ADR-0010/0011):** Tailwind v4 utilities; components in `src/components/<area>/` with a
   `*.test.tsx` beside each (`// @vitest-environment jsdom`, RTL, `afterEach(cleanup)`); the
   browser-side streaming client is `src/lib/chat-client.ts` (`askStream`), SSE parsing in

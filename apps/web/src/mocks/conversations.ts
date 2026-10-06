@@ -1,3 +1,4 @@
+import { sseFrame } from '@/lib/sse';
 import type { components } from '@/lib/api-types';
 
 /**
@@ -67,3 +68,46 @@ export function createdConversationFixture(title?: string | null): Schemas['Conv
     updated_at: '2026-10-06T10:15:00Z',
   };
 }
+
+// ── ask (roadmap web 1.2) ────────────────────────────────────────────────────
+
+const MOCK_ANSWER =
+  'The trace id is minted at the edge and forwarded unchanged on every hop [1]. Run both services locally with just dev [2].';
+const MOCK_CITATIONS: Schemas['Citation'][] = [
+  { title: 'The `trace_id` contract', path: 'architecture/tracing.md' },
+  { title: 'Getting started', path: 'getting-started.md' },
+];
+
+/** `POST /v1/conversations/{id}/ask` → 200. */
+export const askFixture: Schemas['AskResponse'] = {
+  message_id: '4d5e6f70-3333-4b8c-9d0e-1f2a3b4c5d6e',
+  answer: MOCK_ANSWER,
+  citations: MOCK_CITATIONS,
+};
+
+/**
+ * Mock mode picks a scenario from a marker in the question, so the UI's error states can be
+ * exercised without the api: `[mock:error]` → a mid-stream `error` frame, `[mock:503]` → a JSON
+ * 503 before the first frame; anything else → a full answer.
+ */
+export type MockAskScenario = 'answer' | 'error' | '503';
+
+export function mockAskScenario(question: string): MockAskScenario {
+  if (question.includes('[mock:503]')) return '503';
+  if (question.includes('[mock:error]')) return 'error';
+  return 'answer';
+}
+
+/** The frames the api's `stream_answer()` emits (ADR-0015 shapes): sources → token* → done. */
+export const askStreamFrames: string[] = [
+  sseFrame('sources', { sources: MOCK_CITATIONS, count: 3 }),
+  ...MOCK_ANSWER.split(' ').map((word) => sseFrame('token', { text: `${word} ` })),
+  sseFrame('done', { sources: MOCK_CITATIONS, input_tokens: 812, output_tokens: 31 }),
+];
+
+/** A failure after the first frame: the stream ends with an `error` frame. */
+export const askStreamErrorFrames: string[] = [
+  sseFrame('sources', { sources: MOCK_CITATIONS, count: 3 }),
+  sseFrame('token', { text: 'The trace id is ' }),
+  sseFrame('error', { error: 'ai_unavailable', error_kind: 'timeout' }),
+];

@@ -1,24 +1,37 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { askStream } from '@/lib/chat-client';
+import {
+  askStream,
+  askStreamEndpoint,
+  createConversation,
+  type ChatError,
+} from '@/lib/chat-client';
 import { ChatThread } from './ChatThread';
 import { MessageInput } from './MessageInput';
 import type { ChatMessage } from './types';
 
 interface Props {
-  /** Same-origin SSE route, e.g. `/api/v1/assistant/ask/stream` (the BFF rule: never the api). */
-  endpoint: string;
+  /** Continue this conversation; without one, the first question starts a new conversation. */
+  conversationId?: string;
   title?: string;
+  /** Called once a conversation exists (e.g. so a list can select it — roadmap web 2.1). */
+  onConversation?: (id: string) => void;
 }
 
 let counter = 0;
 const nextId = () => `m${++counter}`;
 
-/** A complete streaming chat surface: thread + input, wired to a BFF SSE route. */
-export function ChatPanel({ endpoint, title = 'Assistant' }: Props) {
+/**
+ * A complete streaming chat surface: thread + input, wired to the conversation BFF routes
+ * (same-origin only — the BFF rule). The first question creates the conversation
+ * (`POST /api/v1/conversations`), then every question streams from
+ * `/api/v1/conversations/{id}/ask/stream`; the api keeps the history.
+ */
+export function ChatPanel({ conversationId, title = 'Assistant', onConversation }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [busy, setBusy] = useState(false);
+  const [activeId, setActiveId] = useState<string | undefined>(conversationId);
   const abortRef = useRef<AbortController | null>(null);
 
   function patchLast(patch: (m: ChatMessage) => ChatMessage) {
@@ -26,28 +39,42 @@ export function ChatPanel({ endpoint, title = 'Assistant' }: Props) {
   }
 
   async function send(question: string) {
-    const assistantId = nextId();
     setMessages((prev) => [
       ...prev,
       { id: nextId(), role: 'user', text: question },
-      { id: assistantId, role: 'assistant', text: '', pending: true },
+      { id: nextId(), role: 'assistant', text: '', pending: true },
     ]);
     setBusy(true);
     abortRef.current?.abort();
     abortRef.current = new AbortController();
+    const fail = (error: ChatError) => patchLast((m) => ({ ...m, pending: false, error }));
+
+    let id = activeId;
+    if (!id) {
+      try {
+        id = await createConversation(undefined, { signal: abortRef.current.signal });
+        setActiveId(id);
+        onConversation?.(id);
+      } catch (err) {
+        fail(err as ChatError);
+        setBusy(false);
+        return;
+      }
+    }
+
     await askStream(
-      endpoint,
+      askStreamEndpoint(id),
       question,
       {
-        onSources: (sources) => patchLast((m) => ({ ...m, sources })),
+        onSources: (citations) => patchLast((m) => ({ ...m, citations })),
         onToken: (text) => patchLast((m) => ({ ...m, text: m.text + text })),
-        onDone: ({ sources }) =>
+        onDone: ({ citations }) =>
           patchLast((m) => ({
             ...m,
             pending: false,
-            sources: sources.length ? sources : m.sources,
+            citations: citations.length ? citations : m.citations,
           })),
-        onError: (kind) => patchLast((m) => ({ ...m, pending: false, error: kind })),
+        onError: fail,
       },
       { signal: abortRef.current.signal },
     );

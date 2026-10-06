@@ -162,7 +162,8 @@ async def ask_stream(body: AskIn):
 
 Attach it to `v1_router` (rule 05). The BFF calls `/v1/assistant/ask` with `fetchUpstream`
 (raising the hop timeout via `signal` — a model call routinely exceeds 10 s) and
-`/v1/assistant/ask/stream` with the streaming pass-through helper.
+`/v1/assistant/ask/stream` with the streaming pass-through helper. In this project the routes are
+`/v1/conversations/{id}/ask[/stream]` (api) behind `/api/v1/conversations/{id}/ask[/stream]` (BFF).
 
 ---
 
